@@ -1,0 +1,56 @@
+/* src/assets/styles.css - 全局响应式基准样式 */
+:root{
+  --max-content-width: 1200px;
+  --gutter: 16px;
+  --base-font-size: 16px;
+  --font-scale-min: 14px;
+  --font-scale-max: 18px;
+}
+
+html{
+  box-sizing: border-box;
+  font-size: clamp(var(--font-scale-min), 1vw + 0.5rem, var(--font-scale-max));
+  -webkit-font-smoothing: antialiased;
+}
+
+*, *::before, *::after { box-sizing: inherit; }
+
+body{
+  margin:0;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  line-height:1.4;
+  color:#111;
+  background: #f8f9fb;
+}
+
+/* 中心化页面内容并限制最大宽度 */
+.app-container{
+  max-width: var(--max-content-width);
+  margin-left: auto;
+  margin-right: auto;
+  padding-left: var(--gutter);
+  padding-right: var(--gutter);
+}
+
+/* 通用卡片/表单容器 */
+.card {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 6px 20px rgba(20,20,40,0.06);
+  padding: 1.25rem;
+}
+
+/* 响应式宽度示例：在小屏时自适应，大屏时限制宽度 */
+.auth-panel {
+  width: min(540px, 90vw); /* 540px 最大, 在小屏保持 90% 视口宽度 */
+  margin: 2rem auto;
+}
+
+/* 基本响应断点（按需扩展） */
+@media (min-width: 900px) {
+  .auth-panel { margin: 3rem auto; }
+}
+
+@media (min-width: 1200px) {
+  :root { --max-content-width: 1100px; }
+}
