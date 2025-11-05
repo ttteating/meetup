@@ -9,6 +9,10 @@ import activitymanager from '@/components/myself/activitymanager.vue'
 
 const routes = [
   {
+    path: '/',
+    redirect: '/activitylist'
+  },
+  {
     path: '/auth',
     name: 'Auth',
     component: AuthView

@@ -137,6 +137,7 @@
     </div>
 
     <!-- 活动列表 -->
+     <!--此处需要获取活动ID跳转详情界面-->
     <div class="activities-container">
       <div class="activities-grid">
         <div 
@@ -249,7 +250,7 @@ const searchKeyword = ref('')
 const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = 12
-const sortBy = ref('latest')
+const sortBy = ref('latest')//双向响应
 
 // 筛选条件
 const filters = reactive({
@@ -258,6 +259,9 @@ const filters = reactive({
   categories: [],
   timeRange: []
 })
+
+// 计算属性
+const filteredActivities = computed(() => activities.value)
 
 // 选项数据
 const benefitsOptions = [
@@ -293,99 +297,64 @@ const timeOptions = [
 // 活动数据
 const activities = ref([])//双向同步
 
-// 计算属性
-const filteredActivities = computed(() => {
-  let result = [...activities.value]
-
-  //关键词搜索
-  //使用filter进行条件筛选
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(activity => 
-      activity.title?.toLowerCase().includes(keyword) ||  //使用可选链（?.)防止空值和undefine并使用toLowerCase()实现不区分大小写的搜索
-      activity.description?.toLowerCase().includes(keyword) ||
-      activity.organizer?.toLowerCase().includes(keyword)||
-      activity.location?.toLowerCase().includes(keyword)
-    )
-  }
-
-  // 参与收获筛选（改）
-  //使用some进行条件筛选，只要数组当中有一个元素满足条件，则返回true
-  if (filters.benefits.length > 0) {
-    result = result.filter(activity => {
-      const activityBenefits = Array.isArray(activity.benefits) ? activity.benefits : []
-      return filters.benefits.some(benefit => 
-        activityBenefits.includes(benefit)
-      )
-    })
-  }
-
-  // 面向人群筛选（改）
-  if (filters.audience.length > 0) {
-    result = result.filter(activity => {
-      const activityAudience = Array.isArray(activity.target_audience) ? activity.target_audience : []
-      return filters.audience.some(audience => 
-        activityAudience.includes(audience) || 
-        activityAudience.includes('all')
-      )
-    })
-  }
-
-  // 活动分类筛选
-  if (filters.categories.length > 0) {
-    result = result.filter(activity => 
-      filters.categories.includes(activity.category)
-    )
-  }
-
-  // 时间筛选
-  if (filters.timeRange.length > 0) {
-    const now = new Date()
-    result = result.filter(activity => {
-      const activityTime = new Date(activity.activity_time)
-      if (isNaN(activityTime.getTime())) return false
-      
-      return filters.timeRange.some(timeRange => {
-        switch (timeRange) {
-          case 'week':
-            return activityTime <= new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-          case 'two_weeks':
-            return activityTime <= new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000)
-          case 'month':
-            return activityTime <= new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000)
-          default:
-            return true
-        }
-      })
-    })
-  }
-
-  // 排序
-  result.sort((a, b) => {
-    switch (sortBy.value) {
-      case 'latest':
-        return new Date(b.created_at) - new Date(a.created_at)
-      case 'hot':
-        return (b.views || 0) - (a.views || 0)
-      case 'participants':
-        return (b.current_participants || 0) - (a.current_participants || 0)
-      default:
-        return 0
-    }
-  })
-
-  return result
-})
-
+// 1. 删除本地筛选的 filteredActivities computed 属性
+// 2. 修改 totalPages 计算方式：
+const totalCount = ref(0) // 新增总数引用
 const totalPages = computed(() => {
-  return Math.ceil(filteredActivities.value.length / pageSize)
+  return Math.ceil(totalCount.value / pageSize)
 })
 
+// 3. 简化 paginatedActivities:
 const paginatedActivities = computed(() => {
-  const start = (currentPage.value - 1) * pageSize
-  const end = start + pageSize
-  return filteredActivities.value.slice(start, end)
+  return activities.value // 直接使用后端返回的分页数据
 })
+
+// 4. 更新 fetchActivities 方法：
+const fetchActivities = async () => {
+  loading.value = true
+  try {
+    const params = {
+      keyword: searchKeyword.value.trim(),
+      benefits: filters.benefits,
+      audience: filters.audience,
+      categories: filters.categories,
+      timeRange: filters.timeRange,
+      page: currentPage.value,
+      pageSize: pageSize,
+      sortBy: sortBy.value
+    }
+
+    const result = await activityAPI.getActivitiesWithFilters(params)
+    if (result.success) {
+      activities.value = result.data.activities || []
+      totalCount.value = result.data.total || 0
+    } else {
+      activities.value = []
+      totalCount.value = 0
+    }
+  } catch (error) {
+    console.error('获取活动列表错误:', error)
+    activities.value = []
+    totalCount.value = 0
+  } finally {
+    loading.value = false
+  }
+}
+
+// 5. 添加防抖的数据监听：
+let searchTimer = null
+watch(
+  [searchKeyword, filters, sortBy, currentPage],
+  () => {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      fetchActivities()
+    }, 300)
+  },
+  { deep: true }
+)
+
+
 
 // 方法
 const getCategoryLabel = (categoryValue) => {
@@ -415,19 +384,17 @@ const formatDate = (dateString) => {
 }
 const handleSearch = () => {
   currentPage.value = 1
-  // 在实际应用中，这里会调用搜索API
-  console.log('搜索关键词:', searchKeyword.value)
+  fetchActivities()
 }
 
 const applyFilters = () => {
   currentPage.value = 1
-  // 在实际应用中，这里会调用筛选API
-  console.log('应用筛选:', filters)
+  fetchActivities()
 }
 
 const applySorting = () => {
   currentPage.value = 1
-  console.log('应用排序:', sortBy.value)
+  fetchActivities()
 }
 
 const viewActivityDetail = (activityId) => {
@@ -456,38 +423,10 @@ const joinActivity = async (activityId) => {
 }
 
 const goToCreate = () => {
-  router.push('/activities/create')
+  router.push('/activity')
 }
 
-const fetchActivities = async () => {
-  loading.value = true
-  try {
-    // 构建查询参数
-    const params = {
-      keyword: searchKeyword.value.trim(),
-      benefits: filters.benefits,
-      audience: filters.audience,
-      categories: filters.categories,
-      timeRange: filters.timeRange,
-      page: currentPage.value,
-      pageSize: pageSize,
-      sortBy: sortBy.value
-    }
 
-    const result = await activityAPI.getActivities(params)
-    if (result.success) {
-      activities.value = result.data.activities || result.data
-    } else {
-      console.error('获取活动列表失败:', result.message)
-      activities.value = []
-    }
-  } catch (error) {
-    console.error('获取活动列表错误:', error)
-    activities.value = []
-  } finally {
-    loading.value = false
-  }
-}
 
 const initData = () => {
   currentPage.value = 1
@@ -509,7 +448,6 @@ watch([searchKeyword, filters, sortBy], () => {
   }, 300)
 })
 
-let searchTimer = null
 </script>
 
 <style scoped>
