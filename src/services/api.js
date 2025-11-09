@@ -1,5 +1,5 @@
 //API配置
-const API_BASE_URL = 'http://localhost:8000' //后端地址
+const API_BASE_URL = 'http://127.0.0.1:8080' //后端地址
 
 //通用请求函数
 async function request(endpoint, options = {}) {
@@ -13,18 +13,52 @@ async function request(endpoint, options = {}) {
     ...options,
   }
 
+  // 如果本地存有 token，则自动注入 Authorization 头
+  try {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
+  } catch (e) {
+    // ignore localStorage errors in non-browser env
+  }
+
   if (config.body && typeof config.body === 'object') {
     config.body = JSON.stringify(config.body)
   }
 
   try {
     const response = await fetch(url, config)
-    const data = await response.json()
-    
-    if (!response.ok) {
-      throw new Error(data.detail || '请求失败')
+    // 尝试解析 JSON（有些错误响应也是 JSON）
+    let data
+    try {
+      data = await response.json()
+    } catch (e) {
+      data = null
     }
-    
+
+    if (!response.ok) {
+      // FastAPI 的 validation error 常常返回 { detail: [ ... ] }
+      let msg = '请求失败'
+      if (data) {
+        if (Array.isArray(data.detail)) {
+          // 把每个错误项转换为可读字符串
+          msg = data.detail.map(d => {
+            if (d.msg) return d.msg
+            try { return JSON.stringify(d) } catch(e) { return String(d) }
+          }).join('; ')
+        } else if (typeof data.detail === 'string') {
+          msg = data.detail
+        } else if (data.message) {
+          msg = data.message
+        } else {
+          msg = JSON.stringify(data)
+        }
+      }
+      throw new Error(msg)
+    }
+
     return {
       success: true,
       data,
@@ -34,11 +68,12 @@ async function request(endpoint, options = {}) {
     console.error('API请求错误:', error)
     return {
       success: false,
-      message: error.message,
+      message: error.message || String(error),
       status: 0
     }
   }
 }
+
 
 //处理文件上传API
 async function requestWithFile(endpoint, formData, options = {}) {
@@ -54,14 +89,37 @@ async function requestWithFile(endpoint, formData, options = {}) {
     }
   }
 
+  // 如果有 token，自动添加 Authorization 头
+  try {
+    const token = localStorage.getItem('token')
+    if (token) {
+      config.headers = config.headers || {}
+      config.headers['Authorization'] = `Bearer ${token}`
+    }
+  } catch (e) {
+    // ignore
+  }
+
   try {
     const response = await fetch(url, config)
     const data = await response.json()
-    
+
     if (!response.ok) {
-      throw new Error(data.detail || '请求失败')
+      let msg = '请求失败'
+      if (data) {
+        if (Array.isArray(data.detail)) {
+          msg = data.detail.map(d => d.msg || JSON.stringify(d)).join('; ')
+        } else if (data.detail) {
+          msg = data.detail
+        } else if (data.message) {
+          msg = data.message
+        } else {
+          msg = JSON.stringify(data)
+        }
+      }
+      throw new Error(msg)
     }
-    
+
     return {
       success: true,
       data,
@@ -80,16 +138,38 @@ async function requestWithFile(endpoint, formData, options = {}) {
 // 认证相关API
 export const authAPI = {
   // 登录
-  async login(credentials) {
-    return request('/api/auth/login', {
+   async login(credentials) {
+    // 后端登录接口 /auth/login/credential 接受 JSON body (LoginRequest)
+    const res = await request('/auth/login/credential', {
       method: 'POST',
       body: credentials
     })
+
+    if (!res.success) return res
+
+    const data = res.data || {}
+    const token = data.access_token || data.token || null
+    let user = null
+
+    if (token) {
+      try { localStorage.setItem('token', token) } catch(e) {}
+      try {
+        const me = await request('/auth/me', { method: 'GET' })
+        if (me.success) user = me.data
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    return {
+      success: true,
+      data: { token, user }
+    }
   },
   
   // 注册
   async register(userData) {
-    return request('/api/auth/register', {
+    return request('/auth/register', {
       method: 'POST',
       body: userData
     })
@@ -105,7 +185,7 @@ export const authAPI = {
 
 //验证身份
   async verifyIdentity(data) {
-    return request('/api/auth/verify-identity', {
+    return request('/auth/reset-password/verify', {
       method: 'POST',
       body: data
     })
@@ -113,7 +193,7 @@ export const authAPI = {
 
   // 重置密码
   async resetPassword(data) {
-    return request('/api/auth/reset-password', {
+    return request('/auth/reset-password', {
       method: 'POST',
       body: data
     })
@@ -126,6 +206,21 @@ export const activityAPI = {
   async createActivity(formData) {
     return requestWithFile('/api/activities/', formData, {
       method: 'POST'
+    })
+  },
+
+  // 上传封面图（独立接口，前端可在选择图片后立即上传）
+  async uploadCover(formData) {
+    // formData should be a FormData with a file field, e.g. fd.append('file', file)
+    return requestWithFile('/api/uploads/cover', formData, {
+      method: 'POST'
+    })
+  },
+
+  // 删除已上传的文件（根据上传ID）
+  async deleteUpload(uploadId) {
+    return request(`/api/uploads/cover/${uploadId}`, {
+      method: 'DELETE'
     })
   },
 
@@ -319,14 +414,21 @@ async getFavoritedActivities() {
 export const userAPI = {
   // 获取当前用户信息
   async getCurrentUser() {
-    return request('/api/user/me', {
+    return request(`/auth/me`, {
+      method: 'GET'
+    })
+  },
+
+  // 通过id获取任意用户信息
+  async getUserById(id) {
+    return request(`/auth/me/${id}`, {
       method: 'GET'
     })
   },
   
   // 更新用户信息
   async updateUser(userData) {
-    return request('/api/user/me', {
+    return request('/auth/me', {
       method: 'PUT',
       body: userData
     })
@@ -343,6 +445,17 @@ export const userAPI = {
   async logout() {
     return request('/api/auth/logout', {
       method: 'POST'
+    })
+  }
+}
+
+// AI 聊天接口（扣子AI 智能体）
+export const aiAPI = {
+  // 发送一句话给后端 AI 服务，后端应返回 { success: true, data: { reply: '...' } }
+  async chat(message, context = {}) {
+    return request('/api/ai/chat', {
+      method: 'POST',
+      body: { message, context }
     })
   }
 }

@@ -30,6 +30,16 @@ export const userStore = reactive({
       }
     } catch (error) {
       console.error('获取用户信息失败:', error)
+      this.clearUser()
+    }
+  },
+
+  // 初始化用户状态（页面加载时调用）
+  async initUser() {
+    const token = localStorage.getItem('token')
+    if (token) {
+      this.isLoggedIn = true
+      await this.fetchUserInfo()
     }
   }
 })

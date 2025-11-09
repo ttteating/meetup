@@ -9,10 +9,10 @@
             <img src="@/assets/logo.png" alt="觅活—MeetHub">
             <span class="logo-text">觅活—MeetHub</span>
           </div>
-          <div class="nav-links">
-            <router-link to="/" class="nav-link active">首页</router-link>
-            <a href="#" class="nav-link">分类</a>
-          </div>
+           <div class="nav-links">
+             <router-link to="/" class="nav-link active">首页</router-link>
+             <a href="#" class="nav-link">分类</a>
+           </div>
         </div>
         
         <div class="nav-center">
@@ -29,9 +29,21 @@
           </div>
         </div>
         
-        <div class="nav-right">
-          <router-link to="/auth" class="nav-link">注册/登录</router-link>
-        </div>
+      <div class="nav-right">
+    <template v-if="userStore.isLoggedIn && userStore.userInfo">
+      <div class="user-info">
+        <button class="username-btn" @click="goToProfile">
+          {{ userStore.userInfo.username }}
+        </button>
+          <span class="user-location" v-if="userStore.userInfo.location">{{ userStore.userInfo.location }}</span>
+          <button class="logout-btn" @click="handleLogout">退出</button>
+      </div>
+    </template>
+    <template v-else>
+      <router-link to="/auth" class="nav-link">注册/登录</router-link>
+    </template>
+  </div>
+
       </div>
     </nav>
 
@@ -81,7 +93,7 @@
 
         <!-- 活动分类筛选 -->
         <div class="filter-group">
-          <div class="filter-label">活动分类</div>
+          <div class="filter-label">活动类型</div>
           <div class="filter-options">
             <label 
               v-for="category in categoryOptions" 
@@ -242,8 +254,29 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { activityAPI } from '@/services/api'
+import { userStore } from '@/stores/userstore'
 
 const router = useRouter()
+
+onMounted(async () => {
+  await userStore.initUser()
+  initData()
+})
+
+// 添加退出登录方法
+const handleLogout = () => {
+  userStore.clearUser()
+  router.push('/auth')
+}
+
+//跳转至个人中心
+const goToProfile = () => {
+  if (userStore.userInfo && userStore.userInfo.id) {
+    router.push(`/user/${userStore.userInfo.id}`)
+  } else {
+    router.push('/auth')
+  }
+}
 
 // 搜索和筛选状态
 const searchKeyword = ref('')
@@ -438,6 +471,8 @@ const route = useRoute()
 onMounted(() => {
   initData()
 })
+
+
 
 // 监听筛选条件变化
 watch([searchKeyword, filters, sortBy], () => {
@@ -1011,5 +1046,43 @@ watch([searchKeyword, filters, sortBy], () => {
     justify-content: flex-start;
   }
 }
+}
+
+/* 添加用户信息相关样式 */
+
+.username {
+  color: #4a5057;
+  font-weight: 1000;
+}
+
+.logout-btn {
+  background: #ff7e5f;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 15px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.logout-btn:hover {
+  background: #ff6b4a;
+}
+
+.username-btn {
+  background: none;
+  border: none;
+  color: #4a5057;
+  font-weight: 1000;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.3s;
+}
+
+.username-btn:hover {
+  color: #ff7e5f;
+  background-color: #f8f9fa;
 }
 </style>

@@ -37,13 +37,13 @@
         <!-- 登录表单 -->
         <form v-show="activeTab === 'login'" class="login-form" @submit.prevent="handleLogin">
           <div class="form-container">
-            <label for="phone-or-email">手机号/邮箱</label>
+            <label for="username">用户名</label>
             <input 
               type="text" 
-              id="phone-or-email" 
+              id="username" 
               class="form1" 
-              placeholder="请输入手机号或邮箱"
-              v-model="loginForm.identifier"
+              placeholder="请输入用户名"
+              v-model="loginForm.username"
               required
             >
           </div>
@@ -198,16 +198,18 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive,onMounted } from 'vue'
 import { authAPI } from '@/services/api'
-import { userStore } from '@/stores/userstore'
+import { userStore } from '@/stores/userstore'//登录状态管理
+import { useRouter } from 'vue-router'
 
+const router = useRouter()
 const activeTab = ref('login')
 const loading = ref(false)
 
 // 登录表单数据
 const loginForm = reactive({
-  identifier: '',
+  username: '',
   password: ''
 })
 
@@ -221,12 +223,13 @@ const registerForm = reactive({
   gender: '',
   college: '',
   major: '',
-  hobby: ''
+  hobby: '',
+  grade: ''
 })
 
 // 登录处理
 const handleLogin = async () => {
-  if (!loginForm.identifier || !loginForm.password) {
+  if (!loginForm.username || !loginForm.password) {
     alert('请填写所有必填字段！')
     return
   }
@@ -234,16 +237,19 @@ const handleLogin = async () => {
   loading.value = true
   try {
     const response = await authAPI.login({
-      identifier: loginForm.identifier,
-      password: loginForm.password
+      username: loginForm.username,
+      password: loginForm.password,
     })
-    
+
     if (response.success) {
       // 登录成功处理
-      localStorage.setItem('token', response.data.token)//将服务器相应的数据中的token值存储到本地
-      userStore.setUser(response.data.user)//更新用户状态
+      localStorage.setItem('token', response.data.token)
+      if (response.data.user && response.data.user.id) {
+        localStorage.setItem('user_id', response.data.user.id)
+      }
+      userStore.setUser(response.data.user)
       alert('登录成功！')
-      router.push('/')//跳转到首页
+      router.push('/')
     } else {
       alert(response.message || '登录失败')
     }

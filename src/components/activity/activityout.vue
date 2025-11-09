@@ -273,7 +273,7 @@ import { activityAPI } from '@/services/api'
 
 const router = useRouter()
 
-// 表单数据 - 字段名与FastAPI后端匹配
+// 表单数据
 const formData = reactive({
   title: '',
   organizer: '',
@@ -286,7 +286,8 @@ const formData = reactive({
   major_requirements: '',
   max_participants: '',
   category: '',
-  cover_image: null // 文件对象
+  cover_image: null, // 本地预览或已上传 URL
+  cover_image_id: null // 若已上传到后端，保存服务器返回的文件 id
 })
 
 // 选项数据
@@ -339,32 +340,71 @@ const triggerFileInput = () => {
 }
 
 // 处理封面图上传
-const handleCoverUpload = (event) => {
+const handleCoverUpload = async (event) => {
   const file = event.target.files[0]
-  if (file) {
-    // 验证文件类型
-    if (!file.type.startsWith('image/')) {
-      alert('请上传图片文件')
-      return
+  if (!file) return
+
+  // 验证文件类型
+  if (!file.type.startsWith('image/')) {
+    alert('请上传图片文件')
+    return
+  }
+
+  // 验证文件大小 (限制为5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    alert('图片大小不能超过5MB')
+    return
+  }
+
+  // 显示本地预览
+  coverFile.value = file
+  const localUrl = URL.createObjectURL(file)
+  formData.cover_image = localUrl
+
+  // 同步上传到后端（立即上传）
+  try {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await activityAPI.uploadCover(fd)
+    if (res && res.success) {
+      // 后端返回应包含文件访问 URL 与上传 ID
+      const returned = res.data || {}
+      formData.cover_image = returned.url || returned.path || returned.file_url || formData.cover_image
+      formData.cover_image_id = returned.id || returned.upload_id || returned.file_id || null
+      // 已上传成功，清除本地 file 引用（避免重复上传）
+      coverFile.value = null
+    } else {
+      alert('图片上传失败，请稍后重试')
     }
-    
-    // 验证文件大小 (限制为5MB)
-    if (file.size > 5 * 1024 * 1024) {
-      alert('图片大小不能超过5MB')
-      return
-    }
-    
-    coverFile.value = file
-    // 创建本地预览URL
-    formData.cover_image = URL.createObjectURL(file)
+  } catch (err) {
+    console.error('上传封面失败:', err)
+    alert('图片上传失败，请稍后重试')
   }
 }
 
 // 移除封面图
 const removeCover = () => {
+  // 如果已经上传到服务器，尝试删除服务端文件
+  const uploadedId = formData.cover_image_id
+  if (uploadedId) {
+    activityAPI.deleteUpload(uploadedId).catch(err => {
+      console.warn('删除服务器端文件失败:', err)
+    })
+  }
+
+  // 如果是本地 blob URL，撤销引用
+  try {
+    if (formData.cover_image && typeof formData.cover_image === 'string' && formData.cover_image.startsWith('blob:')) {
+      URL.revokeObjectURL(formData.cover_image)
+    }
+  } catch (e) {
+    // ignore
+  }
+
   formData.cover_image = null
+  formData.cover_image_id = null
   coverFile.value = null
-  fileInput.value.value = '' // 重置文件输入
+  if (fileInput.value) fileInput.value.value = '' // 重置文件输入
 }
 
 // 重置表单
@@ -472,9 +512,12 @@ const prepareFormData = () => {
     submitData.append('target_audience', audience)
   })
   
-  // 添加文件
+  // 添加封面：如果用户在本次会话内上传过文件但尚未通过独立接口上传（coverFile 非空），则以文件形式提交；
+  // 如果已通过即时上传拿到 cover_image_id，则传递该 id 给后端以避免重复上传
   if (coverFile.value) {
     submitData.append('cover_image', coverFile.value)
+  } else if (formData.cover_image_id) {
+    submitData.append('cover_image_id', formData.cover_image_id)
   }
   
   return submitData

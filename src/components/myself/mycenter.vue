@@ -64,7 +64,99 @@
 
         <!-- 个人信息选项卡 -->
         <div v-if="activeTab === 'profile'" class="tab-content">
-          
+          <div class="user-card">
+    <div class="card-header">
+      <h2>个人信息</h2>
+      <div class="action-buttons">
+        <button v-if="!isEditing" @click="toggleEditMode" class="btn-edit">编辑</button>
+        <button v-if="isEditing" @click="saveUserInfo" :disabled="isSaving" class="btn-save">
+          {{ isSaving ? '保存中...' : '保存' }}
+        </button>
+        <button v-if="isEditing" @click="toggleEditMode" class="btn-cancel">取消</button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="form-grid">
+        <div class="form-group">
+          <label class="form-label">用户名</label>
+          <input
+            v-model="formData.username"
+            type="text"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+          <div v-if="fieldErrors.username" class="error-message">{{ fieldErrors.username }}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">手机号</label>
+          <input
+            v-model="formData.phone"
+            type="tel"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+          <div v-if="fieldErrors.phone" class="error-message">{{ fieldErrors.phone }}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">邮箱</label>
+          <input
+            v-model="formData.email"
+            type="email"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+          <div v-if="fieldErrors.email" class="error-message">{{ fieldErrors.email }}</div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">性别</label>
+          <select
+            v-model="formData.gender"
+            class="form-select"
+            :class="{ 'form-select-editing': isEditing }"
+            :disabled="!isEditing"
+          >
+            <option value="">请选择</option>
+            <option value="male">男</option>
+            <option value="female">女</option>
+            <option value="other">其他</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">兴趣爱好</label>
+          <input
+            v-model="formData.hobbies"
+            type="text"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">学院</label>
+          <input
+            v-model="formData.college"
+            type="text"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+        </div>
+        <div class="form-group">
+          <label class="form-label">专业</label>
+          <input
+            v-model="formData.major"
+            type="text"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+          />
+        </div>
+      </div>
+    </div>
+  </div>
         </div>
 
         <!-- 我创建的活动选项卡 -->
@@ -72,7 +164,7 @@
           <div class="activities-section">
             <h2 class="section-title">我创建的活动</h2>
             <div class="create-action">
-              <router-link to="/create-activity" class="btn-primary">
+              <router-link to="/activity" class="btn-primary">
                 <span class="btn-icon">➕</span>
                 创建新活动
               </router-link>
@@ -84,7 +176,7 @@
             <div v-else-if="createdActivities.length === 0" class="empty-state">
               <div class="empty-icon">📝</div>
               <p>您还没有创建任何活动</p>
-              <router-link to="/create-activity" class="btn-primary">创建第一个活动</router-link>
+              <router-link to="/activity" class="btn-primary">创建第一个活动</router-link>
             </div>
             <div v-else class="activities-grid">
               <div 
@@ -140,11 +232,12 @@
 
 <script setup>
 import { ref, reactive, onMounted, computed } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { userStore } from '@/stores/userstore'
 import { userAPI, activityAPI } from '@/services/api'
 
 const router = useRouter()
+const route = useRoute()
 const isEditing = ref(false)
 const isSaving = ref(false)
 const activeTab = ref('created') // 默认显示我创建的活动
@@ -192,13 +285,13 @@ const fieldErrors = reactive({
   username: ''
 })
 
-// 计算用户首字母
+// 计算用户首字母（根据用户名的首字母进行生成对应的头像）
 const userInitials = computed(() => {
   if (!formData.username) return 'U'
   return formData.username.charAt(0).toUpperCase()
 })
 
-// 表单验证规则
+// 表单验证规则（主要针对电话号码、邮箱以及用户名）
 const validationRules = {
   phone: (value) => {
     if (!value) return '手机号不能为空'
@@ -239,18 +332,24 @@ const validateForm = () => {
   return !Object.values(fieldErrors).some(error => error !== '')
 }
 
-// 加载用户信息
+// 加载用户信息（支持通过id参数加载任意用户）
 const loadUserInfo = async () => {
   try {
-    const result = await userAPI.getCurrentUser()
+    const id = route.params.id
+    if (!id) return
+    // 如果是当前登录用户，优先用store
+    if (userStore.userInfo && userStore.userInfo.id == id) {
+      Object.assign(formData, userStore.userInfo)
+      return
+    }
+    // 否则拉取指定id用户
+    const result = await userAPI.getUserById(id)
     if (result.success) {
       Object.assign(formData, result.data)
-      // 更新 store
-      userStore.userInfo = { ...result.data }
     } else {
       console.error('获取用户信息失败:', result.message)
-      alert('获取用户信息失败，请重新登录')
-      router.push('/login')
+      alert('获取用户信息失败')
+      router.push('/auth')
     }
   } catch (error) {
     console.error('加载用户信息错误:', error)
@@ -604,11 +703,11 @@ onMounted(() => {
   // 检查登录状态
   if (!userStore.isLoggedIn) {
     alert('请先登录')
-    router.push('/login')
+    router.push('/auth')
     return
   }
   
-   加载用户信息和初始选项卡数据
+  // 加载用户信息和初始选项卡数据
   loadUserInfo()
   loadCreatedActivities() // 默认加载我创建的活动
 })

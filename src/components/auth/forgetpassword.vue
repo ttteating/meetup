@@ -65,7 +65,7 @@
           </button>
           
           <div class="back-to-login">
-            <router-link to="/login">返回登录</router-link>
+            <router-link to="/auth">返回登录</router-link>
           </div>
         </form>
 
@@ -259,7 +259,8 @@ async function resetPassword() {
   
   try {
     const response = await authAPI.resetPassword({
-      token: verificationToken.value,
+      email: verificationForm.email,
+      phone:verificationForm.phone,
       new_password: passwordForm.newPassword
     })
     
@@ -279,7 +280,7 @@ async function resetPassword() {
 
 // 返回登录
 function goToLogin() {
-  router.push('/login')
+  router.push('/auth')
 }
 </script>
 

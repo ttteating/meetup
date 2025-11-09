@@ -38,9 +38,16 @@ const routes = [
     component: activitydview
   },
   {
-    path:'/mycenter',
-    name:'mycenter',
-    component:mycenter
+    path: '/user/:id',
+    name: 'usercenter',
+    component: mycenter
+  },
+  {
+    path: '/mycenter',
+    redirect: () => {
+      const id = localStorage.getItem('user_id')
+      return id ? `/user/${id}` : '/auth'
+    }
   },
   {
     path:'/activity/:id/manager',

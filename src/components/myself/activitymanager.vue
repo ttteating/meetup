@@ -223,7 +223,7 @@
                 </div>
 
                 <div class="form-group full-width">
-                  <label class="form-label">活动分类</label>
+                  <label class="form-label">活动类型</label>
                   <select 
                     v-model="editForm.category" 
                     class="form-select"
@@ -231,12 +231,13 @@
                     :disabled="!canEdit"
                   >
                     <option value="">请选择分类</option>
-                    <option value="sports">体育运动</option>
-                    <option value="academic">学术讲座</option>
-                    <option value="art">文化艺术</option>
-                    <option value="social">社交活动</option>
+                    <option value="sports"></option>
+                    <option value="academic">学术调研</option>
+                    <option value="arts">文化艺术</option>
+                    <option value="social">社会实践</option>
                     <option value="volunteer">志愿服务</option>
-                    <option value="other">其他</option>
+                    <option value="career">就业创业</option>
+                    <option value="campus">校园活动</option>
                   </select>
                   <div v-if="fieldErrors.category" class="error-message">{{ fieldErrors.category }}</div>
                 </div>
