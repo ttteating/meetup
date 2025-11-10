@@ -154,6 +154,22 @@
             :readonly="!isEditing"
           />
         </div>
+        <div class="form-group">
+  <label class="form-label">年级</label>
+  <select
+    v-model="formData.grade"
+    class="form-select"
+    :class="{ 'form-select-editing': isEditing }"
+    :disabled="!isEditing"
+  >
+    <option value="">请选择</option>
+    <option value="大一">大一</option>
+    <option value="大二">大二</option>
+    <option value="大三">大三</option>
+    <option value="大四">大四</option>
+    <option value="研究生">研究生</option>
+  </select>
+</div>
       </div>
     </div>
   </div>
@@ -261,15 +277,18 @@ const tabs = [
   { id: 'profile', name: '个人信息', icon: 'icon-user' }
 ]
 
-// 表单数据
+// 表单数据（包含用户的基本信息和扩展信息）
 const formData = reactive({
+  // 基本信息
   phone: '',
   email: '',
   username: '',
   gender: '',
   hobbies: '',
+  // profile_attributes中的扩展信息
   college: '',
-  major: ''
+  major: '',
+  grade: ''
 })
 
 // 活动数据 - 添加我创建的活动
@@ -332,24 +351,75 @@ const validateForm = () => {
   return !Object.values(fieldErrors).some(error => error !== '')
 }
 
-// 加载用户信息（支持通过id参数加载任意用户）
+// 加载用户信息
 const loadUserInfo = async () => {
   try {
     const id = route.params.id
-    if (!id) return
-    // 如果是当前登录用户，优先用store
-    if (userStore.userInfo && userStore.userInfo.id == id) {
-      Object.assign(formData, userStore.userInfo)
+    if (!id) {
+      console.warn('没有用户ID，无法加载用户信息')
       return
     }
-    // 否则拉取指定id用户
-    const result = await userAPI.getUserById(id)
-    if (result.success) {
-      Object.assign(formData, result.data)
+
+    // 获取用户数据（优先从store获取，否则从API获取）
+    let userData = null
+    if (userStore.userInfo && userStore.userInfo.id == id) {
+      userData = userStore.userInfo
     } else {
-      console.error('获取用户信息失败:', result.message)
-      alert('获取用户信息失败')
-      router.push('/auth')
+      const result = await userAPI.getUserById(id)
+      if (!result.success) {
+        console.error('获取用户信息失败:', result.message)
+        alert('获取用户信息失败')
+        router.push('/auth')
+        return
+      }
+      userData = result.data
+    }
+
+    // 重置表单数据
+    formData.username = userData.username || ''
+    formData.email = userData.email || ''
+    formData.phone = userData.phone || ''
+    formData.gender = userData.gender || ''
+    formData.hobbies = userData.hobbies || ''
+
+    // 处理 profile_attributes
+    if (userData.profile_attributes) {
+      const profileData = typeof userData.profile_attributes === 'string' 
+        ? JSON.parse(userData.profile_attributes) 
+        : userData.profile_attributes
+        
+      formData.college = profileData.college || ''
+      formData.major = profileData.major || ''
+      formData.grade = profileData.grade || ''
+      
+      // 如果年级是"202X级"格式，转换为"大一"等
+      if (formData.grade && formData.grade.includes('级')) {
+        const gradeYearMatch = formData.grade.match(/(\d{4})级/)
+        if (gradeYearMatch) {
+          const gradeYear = parseInt(gradeYearMatch[1])
+          const currentYear = new Date().getFullYear()
+          const yearDiff = currentYear - gradeYear
+          
+          // 统一处理研究生情况
+          let gradeText
+          if (yearDiff >= 4) {
+            gradeText = '研究生'
+          } else {
+            const gradeMap = {
+              0: '大一',
+              1: '大二',
+              2: '大三',
+              3: '大四'
+            }
+            gradeText = gradeMap[yearDiff] || `${yearDiff}年级`
+          }
+          formData.grade = gradeText
+        }
+      }
+    } else {
+      formData.college = ''
+      formData.major = ''
+      formData.grade = ''
     }
   } catch (error) {
     console.error('加载用户信息错误:', error)
@@ -491,7 +561,23 @@ const saveUserInfo = async () => {
   
   isSaving.value = true
   try {
-    const result = await userAPI.updateUser(formData)
+    // 构造要提交的数据，确保profile_attributes一定会被创建
+    const submitData = {
+      username: formData.username || '',
+      email: formData.email || '',
+      phone: formData.phone || '',
+      gender: formData.gender || '',
+      hobbies: formData.hobbies || '',
+      // 创建一个新的 profile_attributes 对象
+      profile_attributes: JSON.stringify({
+        college: formData.college || '',
+        major: formData.major || '',
+        grade: formData.grade || '', // 不再转换格式，保持和表单一致
+        skills: formData.hobbies ? formData.hobbies.split(',').map(s => s.trim()).filter(Boolean) : []
+      })
+    }
+
+    const result = await userAPI.updateUser(submitData)
     if (result.success) {
       // 更新本地存储的用户信息
       userStore.userInfo = { ...result.data }
@@ -508,6 +594,38 @@ const saveUserInfo = async () => {
   }
 }
 
+// 辅助函数：将"大一"、"研究生"等转为"202X级"
+function convertGradeToYear(gradeText) {
+  // 如果已经是"202X级"格式，直接返回
+  if (gradeText && gradeText.includes('级')) {
+    return gradeText
+  }
+  
+  // 特殊处理研究生
+  if (gradeText === '研究生') {
+    const currentYear = new Date().getFullYear()
+    return `${currentYear - 1}级` // 研究生通常比本科生晚一年入学
+  }
+  
+  const undergraduateMap = {
+    '大一': 1,
+    '大二': 2,
+    '大三': 3,
+    '大四': 4
+  }
+  
+  const yearOffset = undergraduateMap[gradeText]
+  if (yearOffset === undefined) {
+    // 对于其他情况，使用默认年份偏移
+    const currentYear = new Date().getFullYear()
+    const targetYear = currentYear - 1 // 默认为最近一年入学
+    return `${targetYear}级`
+  }
+
+  const currentYear = new Date().getFullYear()
+  const targetYear = currentYear - yearOffset + 1
+  return `${targetYear}级`
+}
 // 编辑活动
 const editActivity = (activityId) => {
   router.push(`/edit-activity/${activityId}`)

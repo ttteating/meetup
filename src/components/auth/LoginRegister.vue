@@ -123,7 +123,7 @@
               id="college" 
               class="form1" 
               placeholder="请输入学院"
-              v-model="registerForm.college"
+              v-model="registerForm.profile_attributes.college"
               required
             >
           </div>
@@ -135,14 +135,14 @@
               id="major" 
               class="form1" 
               placeholder="请输入专业"
-              v-model="registerForm.major"
+              v-model="registerForm.profile_attributes.major"
               required
             >
           </div>
 
           <div class="form-container">
             <label for="grade">年级</label>
-            <select id="grade" class="form1" v-model="registerForm.grade">
+            <select id="grade" class="form1" v-model="registerForm.profile_attributes.grade">
               <option value="freshman">大一</option>
               <option value="sophomore">大二</option>
               <option value="junior">大三</option>
@@ -158,7 +158,8 @@
               id="hobby" 
               class="form1" 
               placeholder="请输入爱好"
-              v-model="registerForm.hobby"
+              :value="registerForm.profile_attributes.hobby.join(', ')"
+    @input="registerForm.profile_attributes.hobby = $event.target.value.split(',').map(h => h.trim()).filter(h => h)"
               required
             >
           </div>
@@ -220,12 +221,34 @@ const registerForm = reactive({
   phone: '',
   password: '',
   confirmPassword: '',
+  profile_attributes:
+  {
   gender: '',
   college: '',
   major: '',
-  hobby: '',
-  grade: ''
+  hobby: [],
+  grade: ''}
 })
+
+const convertGradeToYear = (gradeValue) => {
+  const currentYear = new Date().getFullYear(); // 获取当前年份
+  // 以2024级为大二基准
+  const baseYear = 2024;
+  const baseGrade = 'sophomore'; // 大二
+  
+  // 定义年级对应关系
+  const gradeMap = {
+    'freshman': 0,    // 大一
+    'sophomore': 1,   // 大二
+    'junior': 2,      // 大三
+    'senior': 3,      // 大四
+    'graduate': 4     // 研究生
+  }
+   const yearDifference = gradeMap[gradeValue] - gradeMap[baseGrade];
+  const actualYear = baseYear - yearDifference;
+  
+  return `${actualYear}级`;
+}
 
 // 登录处理
 const handleLogin = async () => {
@@ -262,6 +285,7 @@ const handleLogin = async () => {
 }
 
 // 注册处理
+// 注册处理
 const handleRegister = async () => {
   // 表单验证
   if (!registerForm.username || !registerForm.email || !registerForm.phone || !registerForm.password) {
@@ -276,23 +300,28 @@ const handleRegister = async () => {
 
   loading.value = true
   try {
+    // 调用年级转换函数，定义 convertedGrade 变量
+    const convertedGrade = convertGradeToYear(registerForm.profile_attributes.grade);
+    
     const response = await authAPI.register({
       username: registerForm.username,
       email: registerForm.email,
       phone: registerForm.phone,
       password: registerForm.password,
-      college: registerForm.college,
-      major: registerForm.major,
-      hobby: registerForm.hobby,
-      gender: registerForm.gender,
-      grade: registerForm.grade
+      profile_attributes:{
+        college: registerForm.profile_attributes.college,
+        major: registerForm.profile_attributes.major,
+        hobby: registerForm.profile_attributes.hobby,
+        gender: registerForm.profile_attributes.gender,
+        grade: convertedGrade  // 现在 convertedGrade 已正确定义
+      }
     })
     
     if (response.success) {
       alert('注册成功！')
       localStorage.setItem('token', response.data.token)
-      userStore.setUser(response.data.user) //更新用户状态
-      router.push('/')//跳转到首页
+      userStore.setUser(response.data.user)
+      router.push('/')
     } else {
       alert(response.message || '注册失败')
     }

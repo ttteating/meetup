@@ -419,9 +419,17 @@ export const userAPI = {
     })
   },
 
-  // 通过id获取任意用户信息
+  // 通过id获取任意用户信息（如果id是当前用户id，则调用/auth/me）
   async getUserById(id) {
-    return request(`/auth/me/${id}`, {
+    const currentUserId = localStorage.getItem('user_id')
+    // 如果是获取当前登录用户，调用/auth/me
+    if (id === currentUserId) {
+      return request('/auth/me', {
+        method: 'GET'
+      })
+    }
+    // 如果是获取其他用户，调用user接口
+    return request(`/auth/users/${id}`, {
       method: 'GET'
     })
   },
