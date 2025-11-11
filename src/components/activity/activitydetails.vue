@@ -17,7 +17,12 @@
           <button class="create-btn" @click="goToCreate">
             🎯 免费创建
           </button>
-          <router-link to="/auth" class="nav-link">注册/登录</router-link>
+          <template v-if="isLoggedIn">
+            <router-link :to="userCenter" class="nav-link">{{ displayName }}</router-link>
+          </template>
+          <template v-else>
+            <router-link to="/auth" class="nav-link">注册/登录</router-link>
+          </template>
         </div>
       </div>
     </nav>
@@ -29,7 +34,8 @@
         <div class="cover-section">
           <div class="cover-image">
             <img 
-              :src="activity.cover_image || '/placeholder-cover.jpg'" 
+              :src="activity.cover_image || '/placeholder-cover.jpg'"
+              referrerpolicy="no-referrer" 
               :alt="activity.title"
               class="cover-img"
             >
@@ -104,11 +110,12 @@
             <button 
               class="join-btn"
               @click="handleJoin"
-              :disabled="isJoined || isFull || loading"
+              :disabled="isJoined || loading || !isJoinable"
             >
               <span v-if="loading">报名中...</span>
               <span v-else-if="isJoined">✅ 已报名</span>
               <span v-else-if="isFull">❌ 已满员</span>
+              <span v-else-if="!isJoinable">❌ 不可报名</span>
               <span v-else>立即报名</span>
             </button>
 
@@ -234,6 +241,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { activityAPI, API_BASE_URL as API_BASE_URL_IMPORT } from '@/services/api'
+import { userStore } from '@/stores/userstore'
 
 const route = useRoute()
 const router = useRouter()
@@ -248,6 +256,38 @@ const isJoined = ref(false)
 const isFull = computed(() => {
   if (!activity.value) return false
   return activity.value.current_participants >= activity.value.max_participants
+})
+
+//添加逻辑查看是否超过了报名时间，如果超过了，显示不可报名防止用户误触
+//同时检查活动状态是否为已发布(published)
+const isJoinable = computed(() => {
+  const a = activity.value
+  if (!a) return false
+  
+  // 检查活动状态是否为已发布
+  if (a.status !== 'published') {
+    return false
+  }
+  
+  // 检查是否超过活动开始时间
+  const now = Date.now()
+  const startTs = a.activity_time ? new Date(a.activity_time).getTime() : null
+  if (startTs === null || isNaN(startTs)) return true
+  return now <= startTs
+})
+
+// 登录状态与用户信息展示
+const isLoggedIn = computed(() => userStore.isLoggedIn)
+const displayName = computed(() => {
+  const u = userStore.userInfo || {}
+  const nick = (u.nickname || '').trim()
+  const uname = (u.username || '').trim()
+  const normalize = (v) => (v && v.toLowerCase() !== 'string' ? v : '')
+  return normalize(nick) || normalize(uname) || '个人中心'
+})
+const userCenterLink = computed(() => {
+  const id = (userStore.userInfo && (userStore.userInfo.id || userStore.userInfo.user_id)) || localStorage.getItem('user_id')
+  return id ? `/user/${id}` : '/mycenter'
 })
 
 // 选项数据（与创建活动页面保持一致）
@@ -323,15 +363,33 @@ const goBack = () => {
 }
 
 const goToCreate = () => {
-  router.push('/activities/create')
+  router.push('/activity')
 }
 
 const handleJoin = async () => {
-  if (isJoined.value || isFull.value) return
+  if (isJoined.value || !isJoinable.value) {
+    alert('当前活动状态不可报名')
+    return
+  }
+  // 需要登录
+  if (!userStore.isLoggedIn) {
+    router.push('/auth')
+    return
+  }
+  // 需要令牌
+  const token = localStorage.getItem('token')
+  if (!token) {
+    alert('登录已失效，请重新登录后再试')
+    router.push('/auth')
+    return
+  }
   
   loading.value = true
   try {
-    const result = await activityAPI.joinActivity(route.params.id)
+    const result = await activityAPI.joinActivity(Number(route.params.id), {
+      comment: '',
+      additional_info: {}
+    })
     if (result.success) {
       isJoined.value = true
       // 更新报名人数
@@ -339,6 +397,8 @@ const handleJoin = async () => {
         activity.value.current_participants = (activity.value.current_participants || 0) + 1
       }
       alert('报名成功！')
+      // 成功后再拉一次报名状态以与后端保持一致
+      await checkJoinStatus()
     } else {
       alert(result.message || '报名失败')
     }
@@ -353,51 +413,63 @@ const handleJoin = async () => {
 const fetchActivityDetail = async () => {
   loading.value = true
   error.value = ''
-  
+
   try {
-    // 记录页面浏览
-    await activityAPI.incrementActivityViews(route.params.id)
-    
     // 获取活动详情
     const result = await activityAPI.getActivityDetails(route.params.id)
-    if (result.success) {
-      // 规范化返回字段，兼容后端格式
-      const item = result.data
-      item.activity_time = item.start_time || item.activity_time
-      item.benefits = Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : (Array.isArray(item.benefits) ? item.benefits : [])
-      // target_audience 统一为年级数组，模板期望是数组
-      if (item.target_audience && Array.isArray(item.target_audience.Targeted_people)) {
-        item.target_audience = item.target_audience.Targeted_people
-      } else if (Array.isArray(item.target_audience)) {
-        // already array
-      } else {
-        item.target_audience = []
-      }
-      // category 优先从 target_audience.Activity_class 取第一个
-      if (result.data.target_audience && Array.isArray(result.data.target_audience.Activity_class) && result.data.target_audience.Activity_class.length > 0) {
-        item.category = result.data.target_audience.Activity_class[0]
-      }
 
-      activity.value = item
-      // 尝试解析封面图片 URL（后端静态路径规则）
-      resolveCoverForDetail(activity.value)
-      // 检查用户是否已报名
-      await checkJoinStatus()
-    } else {
-      error.value = result.message || '获取活动详情失败'
-      // 使用模拟数据
-      activity.value = getMockActivityDetail()
+    if (!result || !result.success) {
+      throw new Error(result?.message || '获取活动详情失败')
     }
+
+    // 如果返回的是分页结构，则取 items[0]
+    const payload = result.data
+    // 兼容后端两种返回：{ activity, stats } 或 { items: [...] } 或直接对象
+    const item = payload?.activity
+      ? payload.activity
+      : (payload?.items && payload.items.length > 0 ? payload.items[0] : payload)
+
+    // 规范化字段
+    const activityData = {
+      id: item.id,
+      title: item.title,
+      description: item.description,
+      cover_image: item.cover_image,
+      location: item.location,
+      activity_time: item.start_time, 
+      end_time: item.end_time,
+      max_participants: item.max_participants,
+      current_participants: item.current_participants || 0,
+      views: item.views_count || 0,
+      status: item.status,
+      benefits: Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : [],
+      target_audience: Array.isArray(item.target_audience?.Targeted_people) 
+        ? item.target_audience.Targeted_people 
+        : [],
+      category: Array.isArray(item.target_audience?.Activity_class) && item.target_audience.Activity_class.length > 0
+        ? item.target_audience.Activity_class[0]
+        : 'campus',
+      organizer: item.publisher?.username || item.publisher?.nickname || '未知组织者'
+    }
+
+    // 设置到 state
+    activity.value = activityData
+
+    // 解析封面图
+    resolveCoverForDetail(activity.value)
+
+    // 检查报名状态
+    await checkJoinStatus()
+
   } catch (err) {
     console.error('获取活动详情错误:', err)
     error.value = '网络错误，请检查连接后重试'
     // 使用模拟数据
-    activity.value = getMockActivityDetail()
+    activity.value = null
   } finally {
     loading.value = false
   }
 }
-
 // 解析详情页封面图片的简单探测器（优先使用 cover_image，如果空则尝试 static 路径）
 const checkImage = (url) => {
   return new Promise(resolve => {
@@ -412,28 +484,37 @@ const checkImage = (url) => {
 const resolveCoverForDetail = async (item) => {
   if (!item) return
   const cur = item.cover_image || ''
-  if (cur && /^https?:\/\//i.test(cur)) return
 
-  // 如果是以 / 开头的相对路径，拼接基地址
-  if (cur && cur.startsWith('/')) {
-    const candidate = `${API_BASE_URL_IMPORT}${cur}`
+ //图片处理逻辑
+  const asHintExt = (() => {
+    const v = (cur || '').trim()
+    if (!v) return ''
+    // 只有扩展名，如 'jpg' 或 '.png'
+    if (/^\.[a-zA-Z0-9]+$/.test(v) || /^[a-zA-Z0-9]+$/.test(v)) {
+      return v.replace('.', '')
+    }
+    // 文件名带扩展，如 '5.png' 或 'cover.JPG'
+    const m = v.match(/\.([a-zA-Z0-9]+)$/)
+    return m ? m[1] : ''
+  })()
+  if (asHintExt && item.id !== undefined && item.id !== null) {
+    const candidate = `${API_BASE_URL_IMPORT}/static/img/TopActivities/${item.id}.${asHintExt}`
     if (await checkImage(candidate)) {
       item.cover_image = candidate
       return
     }
   }
 
-  // 使用后端约定的静态路径模板
-  const id = item.id
-  if (id !== undefined && id !== null) {
-    const candidate = `${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.jpg`
-    if (await checkImage(candidate)) {
-      item.cover_image = candidate
-      return
+  
+  // 后端若返回了占位 “string” 或空，强制使用静态路径再尝试一次
+  if (!cur || cur === 'string') {
+    const id2 = item.id
+    if (id2 !== undefined && id2 !== null) {
+      const ok2 = await tryStaticById(id2)
+      if (ok2) return
     }
   }
-
-  // 最终尝试保留原始值或占位
+  item.cover_image = item.cover_image && item.cover_image.startsWith('/') ? `${API_BASE_URL_IMPORT}${item.cover_image}` : ''
 }
 
 const checkJoinStatus = async () => {
@@ -445,28 +526,6 @@ const checkJoinStatus = async () => {
     }
   } catch (err) {
     console.error('检查报名状态失败:', err)
-  }
-}
-
-// 模拟数据函数 - 用于API失败时的备用数据
-const getMockActivityDetail = () => {
-  return {
-    id: route.params.id,
-    title: '2025匠心筑基 数智领航-东莞专精特新制造业数智化论坛',
-    organizer: '东莞市工业协会',
-    location: '东莞GCC旗舰店（PBRA）',
-    activity_time: '2025-11-17T09:00:00',
-    description: '本次论坛聚焦专精特新制造业的数智化转型，邀请行业专家分享最新技术和实践案例。活动内容包括主题演讲、圆桌讨论和技术展示，为参与者提供深入了解制造业数字化转型的机会。',
-    benefits: ['综测加分', '志愿时'],
-    benefits_details: '参与本次活动可获得2小时志愿时和综测加分1分，具体加分标准请参考各学院规定。',
-    target_audience: ['all'],
-    major_requirements: '不限专业，欢迎对制造业和数字化转型感兴趣的同学参加',
-    category: 'career',
-    max_participants: 200,
-    current_participants: 156,
-    cover_image: null,
-    created_at: '2024-01-15T10:00:00',
-    views: 1200
   }
 }
 

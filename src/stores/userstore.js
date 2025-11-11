@@ -10,6 +10,12 @@ export const userStore = reactive({
   setUser(userData) {
     this.isLoggedIn = true
     this.userInfo = userData
+    try {
+      const uid = userData && (userData.id || userData.user_id)
+      if (uid !== undefined && uid !== null) {
+        localStorage.setItem('user_id', String(uid))
+      }
+    } catch (e) {}
   },
   
   // 清除用户信息（退出登录时调用）
@@ -27,6 +33,12 @@ export const userStore = reactive({
       const result = await userAPI.getCurrentUser()
       if (result.success) {
         this.userInfo = result.data
+        try {
+          const uid = result.data && (result.data.id || result.data.user_id)
+          if (uid !== undefined && uid !== null) {
+            localStorage.setItem('user_id', String(uid))
+          }
+        } catch (e) {}
       }
     } catch (error) {
       console.error('获取用户信息失败:', error)

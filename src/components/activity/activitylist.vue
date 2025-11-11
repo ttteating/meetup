@@ -377,7 +377,7 @@ const fetchActivities = async () => {
           // benefits 展平为数组
           benefits: Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : (Array.isArray(item.benefits) ? item.benefits : []),
           // organizer 可从 publisher.nickname / username 推断
-          organizer: (item.publisher && (item.publisher.nickname || item.publisher.username)) || item.organizer || '',
+          organizer: (item.publisher && (item.publisher.username || item.publisher.nickname)) || item.organizer || '',
           // 初始 cover_image 先使用返回值或占位，之后会尝试检测可用的静态 URL
           cover_image: item.cover_image || item.cover_image_url || ''
         }))
@@ -479,7 +479,10 @@ const viewActivityDetail = (activityId) => {
 
 const joinActivity = async (activityId) => {
   try {
-    const result = await activityAPI.joinActivity(activityId)
+    const result = await activityAPI.joinActivity(activityId, {
+      comment: '',
+      additional_info: {}
+    })
     if (result.success) {
       alert('报名成功！')
       // 更新活动状态
@@ -503,41 +506,16 @@ const goToCreate = () => {
 
 // --- 图片解析与探测逻辑 ---
 // 尝试多种候选 URL（基于后端可能的静态路径与命名规则），找到第一个可访问的图片并更新 activity.cover_image
-const imageExtensions = ['jpg', 'jpeg', 'png', 'webp','gif','bmp']
+const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
 const staticCandidatesFor = (item) => {
   const id = item.id
   const candidates = []
-  // 如果后端直接返回完整 URL 或以 / 开头的相对路径，会在下面处理
-  if (item.cover_image) {
-    const v = item.cover_image
-    if (/^https?:\/\//i.test(v)) {
-      candidates.push(v)
-    } else if (v.startsWith('/')) {
-      candidates.push(`${API_BASE_URL_IMPORT}${v}`)
-    } else if (v.includes('.')) {
-      // 看起来像文件名，尝试以 uploads 目录为前缀
-      candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${v}`)
-      candidates.push(`${API_BASE_URL_IMPORT}/uploads/${v}`)
-    }
-  }
 
   // 按 activityId 构造常见命名候选（后端以 activityId 命名封面）
   if (id !== undefined && id !== null) {
-    // 优先尝试后端已知的静态路径模式（TopActivities）
-    candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.jpg`)
-    // 然后尝试常见扩展名
+    // 仅使用你后端的静态路径 TopActivities，尝试多种扩展名
     imageExtensions.forEach(ext => {
-      candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${id}.${ext}`)
-    })
-    // 也尝试无扩展名路径（后端有时直接用 id 无后缀）
-    candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${id}`)
-    candidates.push(`${API_BASE_URL_IMPORT}/uploads/${id}`)
-  }
-
-  // 最后尝试后端常见静态路径（含 static 前缀）
-  if (id !== undefined && id !== null) {
-    imageExtensions.forEach(ext => {
-      candidates.push(`${API_BASE_URL_IMPORT}/static/uploads/images/activities/${id}.${ext}`)
+      candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.${ext}`)
     })
   }
 

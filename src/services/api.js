@@ -1,5 +1,4 @@
-//API配置
-export const API_BASE_URL = 'http://127.0.0.1:8080' //后端地址
+export const API_BASE_URL = 'http://127.0.0.1:8080' 
 
 //通用请求函数
 async function request(endpoint, options = {}) {
@@ -301,7 +300,7 @@ async uploadCover(activityId, file) {
 
   // 搜索活动（对关键字进行编码）
   async searchactivity(keyword) {
-    return request(`/activities/search/}`, {
+    return request(`/activities/search/`, {
       method: 'GET'
     })
   },
@@ -312,9 +311,18 @@ async uploadCover(activityId, file) {
   },
 
   // 报名参加活动
-  async joinActivity(activity_id) {
+  async joinActivity(activity_id, options = {}) {
+    // 后端创建报名接口需要登录与 activity_id，可选 comment、additional_info
+    const body = {
+      activity_id,
+      comment: typeof options.comment === 'string' ? options.comment : undefined,
+      additional_info: options.additional_info && typeof options.additional_info === 'object'
+        ? options.additional_info
+        : undefined
+    }
     return request(`/registrations/`, {
-      method: 'POST'
+      method: 'POST',
+      body
     })
   },
 
@@ -327,12 +335,15 @@ async uploadCover(activityId, file) {
 
   // 获取我发布的活动
   async getMyActivities() {
-    return request('/api/activities/my-activities')
+    return request('/activities/organizer/my-activities')
   },
 
   // 获取我报名的活动
   async getJoinedActivities() {
-    return request('/registrations/{registration_id}/')
+    // 个人报名记录列表（需要登录）
+    return request('/registrations/my/', {
+      method: 'GET'
+    })
   },
 
   //带筛选条件的活动列表接口
@@ -358,6 +369,12 @@ async uploadCover(activityId, file) {
     if (filters.sortBy) {
       queryParams.append('sort_by', filters.sortBy)
     }
+    // 默认只请求已发布的活动，除非显式传入其他 status
+    if (filters.status) {
+      queryParams.append('status', filters.status)
+    } else {
+      queryParams.append('status', 'published')
+    }
     if (filters.page) {
       queryParams.append('page', filters.page)
     }
@@ -376,9 +393,14 @@ async uploadCover(activityId, file) {
 
   //检查用户是否已报名活动
   async checkJoinStatus(activityId) {
-    return request(`/api/activities/${activityId}/join-status`, {
+    // 查询个人报名记录并在前端判断是否包含该活动
+    const res = await request(`/registrations/my/`, {
       method: 'GET'
     })
+    if (!res.success) return res
+    const list = Array.isArray(res.data?.items) ? res.data.items : (Array.isArray(res.data) ? res.data : [])
+    const joined = list.some(r => String(r.activity_id ?? r.activity?.id) === String(activityId))
+    return { success: true, data: { joined }, status: res.status }
   },
 
   // 增加活动浏览量
@@ -455,6 +477,24 @@ async getFavoritedActivities() {
     return request(`/api/activities/${activityId}/export-participants`, {
       method: 'GET'
     })
+  },
+
+  // 更新活动状态（发布/取消发布等）
+  async updateActivityStatus(activityId, status) {
+    return request(`/activities/${activityId}/status`, {
+      method: 'PATCH',
+      body: { status }
+    })
+  },
+
+  // 发布活动（将状态设置为已发布）
+  async publishActivity(activityId) {
+    return this.updateActivityStatus(activityId, 'published')
+  },
+
+  // 取消发布活动（将状态设置为草稿）
+  async unpublishActivity(activityId) {
+    return this.updateActivityStatus(activityId, 'draft')
   }
 }
 

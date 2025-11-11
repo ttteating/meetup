@@ -580,8 +580,24 @@ const submitForm = async () => {
       // 获取新创建的活动ID
       const activityId = response.data.id
       
-      // 如果有封面图片，上传封面，然后根据上传返回更新活动的 cover_image 字段（如果需要）
-      if (coverFile.value) {
+      // 优化发布/封面上传顺序：先尝试直接发布；若后端要求封面则上传封面并重试发布；
+      // 若已发布且仍有封面文件则在后台上传封面并更新 cover_image（不阻塞跳转）
+      let published = false
+
+      // 首次尝试发布（不依赖封面）
+      try {
+        console.debug('[activityout] 首次尝试发布，activityId=', activityId)
+        const publishResp = await activityAPI.publishActivity(activityId)
+        console.debug('[activityout] publishActivity 首次返回：', publishResp)
+        if (publishResp && publishResp.success) {
+          published = true
+        }
+      } catch (e) {
+        console.error('[activityout] publishActivity 首次调用出错：', e)
+      }
+
+      // 如果首次发布未成功并且存在封面文件，则上传封面并设置 cover_image，然后重试发布一次
+      if (!published && coverFile.value) {
         try {
           const coverResp = await activityAPI.uploadCover(activityId, coverFile.value)
           if (!coverResp.success) {
@@ -603,11 +619,26 @@ const submitForm = async () => {
         }
       }
       
+      // 更新活动状态为已发布（调用后端 PATCH /activities/{id}/status）
+      try {
+        console.debug('[activityout] 调用 publishActivity，activityId=', activityId)
+        const publishResponse = await activityAPI.publishActivity(activityId)
+        console.debug('[activityout] publishActivity 返回：', publishResponse)
+        if (!publishResponse.success) {
+          console.warn('活动状态更新失败:', publishResponse.message)
+          // 即使状态更新失败，仍然认为发布成功，因为活动已经创建
+        }
+      } catch (statusError) {
+        console.error('活动状态更新出错:', statusError)
+        // 即使状态更新出错，仍然认为发布成功，因为活动已经创建
+      }
+      
       // 清除草稿
       localStorage.removeItem('activityDraft')
       
-      // 跳转到活动详情页
-      router.push(`/activities/${activityId}`)
+      // 跳出成功提示并跳转到活动详情页
+      alert('发布成功！')
+      router.push(`/activity/${activityId}`)
     } else {
       alert(`发布失败：${response.message || '未知错误'}`)
     }
