@@ -131,7 +131,6 @@
             </label>
           </div>
         </div>
-
       </div>
     </div>
 
@@ -254,7 +253,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
-import { activityAPI } from '@/services/api'
+import { activityAPI, API_BASE_URL as API_BASE_URL_IMPORT } from '@/services/api'
 import { userStore } from '@/stores/userstore'
 
 const router = useRouter()
@@ -323,9 +322,9 @@ const categoryOptions = [
 ]
 
 const timeOptions = [
-  { value: 'week', label: '本周内' },
+  { value: 'this_week', label: '本周内' },
   { value: 'two_weeks', label: '两周内' },
-  { value: 'month', label: '一个月内' }
+  { value: 'one_month', label: '一个月内' }
 ]
 
 // 活动数据
@@ -347,25 +346,48 @@ const paginatedActivities = computed(() => {
 const fetchActivities = async () => {
   loading.value = true
   try {
-    const params = {
-      keyword: searchKeyword.value.trim(),
-      benefits: filters.benefits,
-      audience: filters.audience,
-      categories: filters.categories,
-      timeRange: filters.timeRange,
-      page: currentPage.value,
-      pageSize: pageSize,
-      sortBy: sortBy.value
-    }
+      // 将前端的筛选值映射为后端期望的值（后端使用中文标签）
+      const audienceMap = { freshman: '大一', sophomore: '大二', junior: '大三', senior: '大四', graduate: '研究生', all: 'all' }
+      const categoryMap = { academic: '学术调研', career: '就业创业', arts: '文体艺术', volunteer: '志愿服务', social: '社会实践', campus: '校园生活' }
 
-    const result = await activityAPI.getActivitiesWithFilters(params)
-    if (result.success) {
-      activities.value = result.data.activities || []
-      totalCount.value = result.data.total || 0
-    } else {
-      activities.value = []
-      totalCount.value = 0
-    }
+      const params = {
+        keyword: searchKeyword.value.trim(),
+        benefits: filters.benefits && filters.benefits.length ? filters.benefits : undefined,
+        audience: filters.audience && filters.audience.length ? filters.audience.map(a => audienceMap[a] || a) : undefined,
+        categories: filters.categories && filters.categories.length ? filters.categories.map(c => categoryMap[c] || c) : undefined,
+        timeRange: filters.timeRange && filters.timeRange.length ? filters.timeRange : undefined,
+        page: currentPage.value,
+        pageSize: pageSize,
+        sortBy: sortByMap[sortBy.value] || 'created_at' // 默认按创建时间
+      }
+
+      const result = await activityAPI.getActivitiesWithFilters(params)
+      if (result.success) {
+        // 后端返回结构 { total, items: [...] }
+        const items = result.data.items || []
+        // 规范化每个活动的字段以适应前端显示逻辑
+        activities.value = items.map(item => ({
+          ...item,
+          // 兼容不同字段命名：activity_time 使用 start_time
+          activity_time: item.start_time || item.activity_time,
+          // category 从 target_audience.Activity_class 取第一个值（如果存在）或使用 item.category
+          category: (item.target_audience && Array.isArray(item.target_audience.Activity_class) && item.target_audience.Activity_class.length > 0)
+                    ? item.target_audience.Activity_class[0]
+                    : (item.category || ''),
+          // benefits 展平为数组
+          benefits: Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : (Array.isArray(item.benefits) ? item.benefits : []),
+          // organizer 可从 publisher.nickname / username 推断
+          organizer: (item.publisher && (item.publisher.nickname || item.publisher.username)) || item.organizer || '',
+          // 初始 cover_image 先使用返回值或占位，之后会尝试检测可用的静态 URL
+          cover_image: item.cover_image || item.cover_image_url || ''
+        }))
+        // 异步检测并解析每个活动的封面真实 URL（如果需要）
+        activities.value.forEach(a => resolveCoverImageIfNeeded(a))
+        totalCount.value = result.data.total || 0
+      } else {
+        activities.value = []
+        totalCount.value = 0
+      }
   } catch (error) {
     console.error('获取活动列表错误:', error)
     activities.value = []
@@ -392,7 +414,11 @@ watch(
 
 // 方法
 const getCategoryLabel = (categoryValue) => {
-  const category = categoryOptions.find(cat => cat.value === categoryValue)
+  // 支持两种情况：categoryValue 可能是前端 code（如 'academic'），也可能是后端中文标签（如 '学术调研'）
+  let category = categoryOptions.find(cat => cat.value === categoryValue)
+  if (category) return category.label
+  // 如果传入的是中文标签，尝试直接返回它或者匹配 label
+  category = categoryOptions.find(cat => cat.label === categoryValue)
   return category ? category.label : categoryValue
 }
 
@@ -416,6 +442,13 @@ const formatDate = (dateString) => {
     minute: '2-digit'
   })
 }
+
+const sortByMap = {
+  latest: 'created_at',
+  hot: 'views_count',
+  participants: 'current_participants'
+}
+
 const handleSearch = () => {
   currentPage.value = 1
   fetchActivities()
@@ -431,9 +464,17 @@ const applySorting = () => {
   fetchActivities()
 }
 
+// 在 activitylist.vue 中添加计算属性或方法
+const getAudience = (activity) => {
+  return activity.target_audience?.Targeted_people || []
+}
+
+const getCategory = (activity) => {
+  return activity.target_audience?.Activity_class || []
+}
 const viewActivityDetail = (activityId) => {
-  // 使用命名路由并传递 params，确保与 router/index.js 中的动态路由一致
-  router.push({ name: 'ActivityDetail', params: { id: activityId } })
+  // 使用命名路由并传递 params，路由名为 'ActivityDetails'（router/index.js）
+  router.push({ name: 'ActivityDetails', params: { id: activityId } })
 }
 
 const joinActivity = async (activityId) => {
@@ -458,6 +499,85 @@ const joinActivity = async (activityId) => {
 
 const goToCreate = () => {
   router.push('/activity')
+}
+
+// --- 图片解析与探测逻辑 ---
+// 尝试多种候选 URL（基于后端可能的静态路径与命名规则），找到第一个可访问的图片并更新 activity.cover_image
+const imageExtensions = ['jpg', 'jpeg', 'png', 'webp','gif','bmp']
+const staticCandidatesFor = (item) => {
+  const id = item.id
+  const candidates = []
+  // 如果后端直接返回完整 URL 或以 / 开头的相对路径，会在下面处理
+  if (item.cover_image) {
+    const v = item.cover_image
+    if (/^https?:\/\//i.test(v)) {
+      candidates.push(v)
+    } else if (v.startsWith('/')) {
+      candidates.push(`${API_BASE_URL_IMPORT}${v}`)
+    } else if (v.includes('.')) {
+      // 看起来像文件名，尝试以 uploads 目录为前缀
+      candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${v}`)
+      candidates.push(`${API_BASE_URL_IMPORT}/uploads/${v}`)
+    }
+  }
+
+  // 按 activityId 构造常见命名候选（后端以 activityId 命名封面）
+  if (id !== undefined && id !== null) {
+    // 优先尝试后端已知的静态路径模式（TopActivities）
+    candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.jpg`)
+    // 然后尝试常见扩展名
+    imageExtensions.forEach(ext => {
+      candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${id}.${ext}`)
+    })
+    // 也尝试无扩展名路径（后端有时直接用 id 无后缀）
+    candidates.push(`${API_BASE_URL_IMPORT}/uploads/images/activities/${id}`)
+    candidates.push(`${API_BASE_URL_IMPORT}/uploads/${id}`)
+  }
+
+  // 最后尝试后端常见静态路径（含 static 前缀）
+  if (id !== undefined && id !== null) {
+    imageExtensions.forEach(ext => {
+      candidates.push(`${API_BASE_URL_IMPORT}/static/uploads/images/activities/${id}.${ext}`)
+    })
+  }
+
+  return candidates
+}
+
+const checkImage = (url) => {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve(true)
+    img.onerror = () => resolve(false)
+    // add a small cache-busting param to avoid stale 404 cached responses
+    img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
+    // safety timeout
+    setTimeout(() => resolve(false), 3000)
+  })
+}
+
+const resolveCoverImageIfNeeded = async (item) => {
+  // 如果已经是完整可用 URL，则不做探测
+  if (!item) return
+  const cur = item.cover_image || ''
+  if (/^https?:\/\//i.test(cur)) return
+
+  const candidates = staticCandidatesFor(item)
+  for (const c of candidates) {
+    // skip duplicates and empty
+    if (!c) continue
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await checkImage(c)
+      if (ok) {
+        item.cover_image = c
+        return
+      }
+    } catch (e) {
+      // ignore and try next
+    }
+  }
+  // 如果都不行，维持占位图（模板会显示 placeholder）
 }
 
 

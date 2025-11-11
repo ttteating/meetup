@@ -1,5 +1,5 @@
 //API配置
-const API_BASE_URL = 'http://127.0.0.1:8080' //后端地址
+export const API_BASE_URL = 'http://127.0.0.1:8080' //后端地址
 
 //通用请求函数
 async function request(endpoint, options = {}) {
@@ -237,7 +237,6 @@ export const activityAPI = {
   },
 
   // 上传活动封面
-  // 上传活动封面
 async uploadCover(activityId, file) {
   // 创建 FormData 对象
   const formData = new FormData()
@@ -272,30 +271,30 @@ async uploadCover(activityId, file) {
   },
 
   // 获取某个活动的详情
-  async getActivityDetails(activityId) {
-    return request(`/activities/${activityId}/`, {
+  async getActivityDetails(activity_id) {
+    return request(`/activities/${activity_id}/`, {
       method: 'GET'
     })
   },
 
   // 更新某个活动的信息（支持文件上传）
-  async updateActivity(activityId, formData) {
-    return requestWithFile(`/activities/${activityId}/`, formData, {
+  async updateActivity(activity_id, formData) {
+    return requestWithFile(`/activities/${activity_id}/`, formData, {
       method: 'PUT'
     })
   },
 
   // 使用 JSON 更新活动字段（例如更新 cover_image 字段）
-  async setCoverImage(activityId, coverImagePath) {
-    return request(`/activities/${activityId}/`, {
+  async setCoverImage(activity_id, coverImagePath) {
+    return request(`/activities/${activity_id}/`, {
       method: 'PUT',
       body: { cover_image: coverImagePath }
     })
   },
 
   // 删除某个活动
-  async deleteActivity(activityId) {
-    return request(`/activities/${activityId}/`, {
+  async deleteActivity(activity_id) {
+    return request(`/activities/${activity_id}/`, {
       method: 'DELETE'
     })
   },
@@ -313,15 +312,15 @@ async uploadCover(activityId, file) {
   },
 
   // 报名参加活动
-  async joinActivity(activityId) {
-    return request(`/api/activities/${activityId}/join`, {
+  async joinActivity(activity_id) {
+    return request(`/registrations/`, {
       method: 'POST'
     })
   },
 
   // 取消报名
-  async cancelJoin(activityId) {
-    return request(`/api/activities/${activityId}/cancel`, {
+  async cancelJoin(activity_id) {
+    return request(`/api/activities/${activity_id}/cancel`, {
       method: 'POST'
     })
   },
@@ -333,7 +332,7 @@ async uploadCover(activityId, file) {
 
   // 获取我报名的活动
   async getJoinedActivities() {
-    return request('/api/activities/joined-activities')
+    return request('/registrations/{registration_id}/')
   },
 
   //带筛选条件的活动列表接口
@@ -367,8 +366,9 @@ async uploadCover(activityId, file) {
     }
 
     const queryString = queryParams.toString()
-    const url = queryString ? `/api/activities/?${queryString}` : '/api/activities/'
-    
+    // 使用统一的搜索接口 /activities/search/ 并在有查询时附加查询字符串
+    const url = queryString ? `/activities/search/?${queryString}` : '/activities/search/'
+
     return request(url, {
       method: 'GET'
     })

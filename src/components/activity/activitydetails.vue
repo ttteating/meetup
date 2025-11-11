@@ -233,7 +233,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { activityAPI } from '@/services/api'
+import { activityAPI, API_BASE_URL as API_BASE_URL_IMPORT } from '@/services/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -361,7 +361,26 @@ const fetchActivityDetail = async () => {
     // 获取活动详情
     const result = await activityAPI.getActivityDetails(route.params.id)
     if (result.success) {
-      activity.value = result.data
+      // 规范化返回字段，兼容后端格式
+      const item = result.data
+      item.activity_time = item.start_time || item.activity_time
+      item.benefits = Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : (Array.isArray(item.benefits) ? item.benefits : [])
+      // target_audience 统一为年级数组，模板期望是数组
+      if (item.target_audience && Array.isArray(item.target_audience.Targeted_people)) {
+        item.target_audience = item.target_audience.Targeted_people
+      } else if (Array.isArray(item.target_audience)) {
+        // already array
+      } else {
+        item.target_audience = []
+      }
+      // category 优先从 target_audience.Activity_class 取第一个
+      if (result.data.target_audience && Array.isArray(result.data.target_audience.Activity_class) && result.data.target_audience.Activity_class.length > 0) {
+        item.category = result.data.target_audience.Activity_class[0]
+      }
+
+      activity.value = item
+      // 尝试解析封面图片 URL（后端静态路径规则）
+      resolveCoverForDetail(activity.value)
       // 检查用户是否已报名
       await checkJoinStatus()
     } else {
@@ -377,6 +396,44 @@ const fetchActivityDetail = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 解析详情页封面图片的简单探测器（优先使用 cover_image，如果空则尝试 static 路径）
+const checkImage = (url) => {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve(true)
+    img.onerror = () => resolve(false)
+    img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
+    setTimeout(() => resolve(false), 3000)
+  })
+}
+
+const resolveCoverForDetail = async (item) => {
+  if (!item) return
+  const cur = item.cover_image || ''
+  if (cur && /^https?:\/\//i.test(cur)) return
+
+  // 如果是以 / 开头的相对路径，拼接基地址
+  if (cur && cur.startsWith('/')) {
+    const candidate = `${API_BASE_URL_IMPORT}${cur}`
+    if (await checkImage(candidate)) {
+      item.cover_image = candidate
+      return
+    }
+  }
+
+  // 使用后端约定的静态路径模板
+  const id = item.id
+  if (id !== undefined && id !== null) {
+    const candidate = `${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.jpg`
+    if (await checkImage(candidate)) {
+      item.cover_image = candidate
+      return
+    }
+  }
+
+  // 最终尝试保留原始值或占位
 }
 
 const checkJoinStatus = async () => {
