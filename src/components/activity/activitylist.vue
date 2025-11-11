@@ -32,11 +32,12 @@
       <div class="nav-right">
     <template v-if="userStore.isLoggedIn && userStore.userInfo">
       <div class="user-info">
+        <router-link to="/activity" class="create-activity-btn">发布活动</router-link>
         <button class="username-btn" @click="goToProfile">
           {{ userStore.userInfo.username }}
         </button>
-          <span class="user-location" v-if="userStore.userInfo.location">{{ userStore.userInfo.location }}</span>
-          <button class="logout-btn" @click="handleLogout">退出</button>
+        <span class="user-location" v-if="userStore.userInfo.location">{{ userStore.userInfo.location }}</span>
+        <button class="logout-btn" @click="handleLogout">退出</button>
       </div>
     </template>
     <template v-else>

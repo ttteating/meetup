@@ -6,6 +6,7 @@ import activitylview from '@/views/activitylview.vue'
 import activitydview from '@/views/activitydview.vue'
 import mycenter from '@/views/mycenterview.vue'
 import activitymanager from '@/components/myself/activitymanager.vue'
+import activityo2view from '@/views/activityo2view.vue'
 
 const routes = [
   {

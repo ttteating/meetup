@@ -113,7 +113,7 @@
         <div class="form-group">
           <label class="form-label">性别</label>
           <select
-            v-model="formData.gender"
+            v-model="formData.profile_attributes.gender"
             class="form-select"
             :class="{ 'form-select-editing': isEditing }"
             :disabled="!isEditing"
@@ -126,18 +126,25 @@
         </div>
         <div class="form-group">
           <label class="form-label">兴趣爱好</label>
-          <input
-            v-model="formData.hobbies"
+          <div v-if="!isEditing" class="hobby-tags">
+            <span v-for="(hobby, index) in formData.profile_attributes.hobby" 
+                  :key="index" 
+                  class="hobby-tag">
+              {{ hobby }}
+            </span>
+          </div>
+          <input v-else
+            v-model="formData.profile_attributes.hobby"
             type="text"
             class="form-input"
             :class="{ 'form-input-editing': isEditing }"
-            :readonly="!isEditing"
+            placeholder="请用逗号分隔多个兴趣爱好"
           />
         </div>
         <div class="form-group">
           <label class="form-label">学院</label>
           <input
-            v-model="formData.college"
+            v-model="formData.profile_attributes.college"
             type="text"
             class="form-input"
             :class="{ 'form-input-editing': isEditing }"
@@ -147,7 +154,7 @@
         <div class="form-group">
           <label class="form-label">专业</label>
           <input
-            v-model="formData.major"
+            v-model="formData.profile_attributes.major"
             type="text"
             class="form-input"
             :class="{ 'form-input-editing': isEditing }"
@@ -155,21 +162,16 @@
           />
         </div>
         <div class="form-group">
-  <label class="form-label">年级</label>
-  <select
-    v-model="formData.grade"
-    class="form-select"
-    :class="{ 'form-select-editing': isEditing }"
-    :disabled="!isEditing"
-  >
-    <option value="">请选择</option>
-    <option value="大一">大一</option>
-    <option value="大二">大二</option>
-    <option value="大三">大三</option>
-    <option value="大四">大四</option>
-    <option value="研究生">研究生</option>
-  </select>
-</div>
+          <label class="form-label">年级</label>
+          <input
+            v-model="formData.profile_attributes.grade"
+            type="text"
+            class="form-input"
+            :class="{ 'form-input-editing': isEditing }"
+            :readonly="!isEditing"
+            placeholder="例如：2023级"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -283,12 +285,14 @@ const formData = reactive({
   phone: '',
   email: '',
   username: '',
-  gender: '',
-  hobbies: '',
   // profile_attributes中的扩展信息
-  college: '',
-  major: '',
-  grade: ''
+  profile_attributes: {
+    college: '',
+    major: '',
+    hobby: [],
+    gender: '',
+    grade: ''
+  }
 })
 
 // 活动数据 - 添加我创建的活动
@@ -379,53 +383,57 @@ const loadUserInfo = async () => {
     formData.username = userData.username || ''
     formData.email = userData.email || ''
     formData.phone = userData.phone || ''
-    formData.gender = userData.gender || ''
-    formData.hobbies = userData.hobbies || ''
+
 
     // 处理 profile_attributes
-    if (userData.profile_attributes) {
-      const profileData = typeof userData.profile_attributes === 'string' 
-        ? JSON.parse(userData.profile_attributes) 
-        : userData.profile_attributes
-        
-      formData.college = profileData.college || ''
-      formData.major = profileData.major || ''
-      formData.grade = profileData.grade || ''
-      
-      // 如果年级是"202X级"格式，转换为"大一"等
-      if (formData.grade && formData.grade.includes('级')) {
-        const gradeYearMatch = formData.grade.match(/(\d{4})级/)
-        if (gradeYearMatch) {
-          const gradeYear = parseInt(gradeYearMatch[1])
-          const currentYear = new Date().getFullYear()
-          const yearDiff = currentYear - gradeYear
-          
-          // 统一处理研究生情况
-          let gradeText
-          if (yearDiff >= 4) {
-            gradeText = '研究生'
-          } else {
-            const gradeMap = {
-              0: '大一',
-              1: '大二',
-              2: '大三',
-              3: '大四'
-            }
-            gradeText = gradeMap[yearDiff] || `${yearDiff}年级`
+    const profileData = userData.profile_attributes
+      ? (typeof userData.profile_attributes === 'string' 
+          ? JSON.parse(userData.profile_attributes) 
+          : userData.profile_attributes)
+      : {}
+
+    // 更新 profile_attributes
+    formData.profile_attributes = {
+      college: profileData.college || '',
+      major: profileData.major || '',
+      hobby: Array.isArray(profileData.hobby) ? profileData.hobby : [],
+      gender: profileData.gender || '',
+      grade: profileData.grade || ''
+    }
+
+    // 如果年级是"202X级"格式，转换为"大一"等（仅在存在年级字符串时转换）
+    const gradeValue = formData.profile_attributes.grade
+    if (gradeValue && gradeValue.includes('级')) {
+      const gradeYearMatch = gradeValue.match(/(\d{4})级/)
+      if (gradeYearMatch) {
+        const gradeYear = parseInt(gradeYearMatch[1])
+        const currentYear = new Date().getFullYear()
+        const yearDiff = currentYear - gradeYear
+
+        // 统一处理研究生情况
+        let gradeText
+        if (yearDiff >= 4) {
+          gradeText = '研究生'
+        } else {
+          const gradeMap = {
+            0: '大一',
+            1: '大二',
+            2: '大三',
+            3: '大四'
           }
-          formData.grade = gradeText
+          gradeText = gradeMap[yearDiff] || `${yearDiff}年级`
         }
+        formData.profile_attributes.grade = gradeText
       }
-    } else {
-      formData.college = ''
-      formData.major = ''
-      formData.grade = ''
     }
   } catch (error) {
     console.error('加载用户信息错误:', error)
     alert('加载用户信息失败，请检查网络连接')
   }
 }
+
+
+
 
 // 加载我创建的活动
 const loadCreatedActivities = async () => {
@@ -445,6 +453,7 @@ const loadCreatedActivities = async () => {
     loading.created = false
   }
 }
+
 
 //当点击了具体报名活动时，自动跳转到相应的活动管理界面
 const viewActivityManagement = (activityId) => {
@@ -549,7 +558,7 @@ const toggleEditMode = () => {
   isEditing.value = !isEditing.value
 }
 
-// 保存用户信息
+// 修改 saveUserInfo 函数，正确构建提交数据
 const saveUserInfo = async () => {
   if (isSaving.value) return
   
@@ -561,20 +570,24 @@ const saveUserInfo = async () => {
   
   isSaving.value = true
   try {
-    // 构造要提交的数据，确保profile_attributes一定会被创建
+    // 处理兴趣爱好数据
+    let hobbies = formData.profile_attributes.hobby
+    if (typeof hobbies === 'string') {
+      hobbies = hobbies.split(',').map(h => h.trim()).filter(Boolean)
+    }
+
+    // 构造要提交的数据
     const submitData = {
       username: formData.username || '',
       email: formData.email || '',
       phone: formData.phone || '',
-      gender: formData.gender || '',
-      hobbies: formData.hobbies || '',
-      // 创建一个新的 profile_attributes 对象
-      profile_attributes: JSON.stringify({
-        college: formData.college || '',
-        major: formData.major || '',
-        grade: formData.grade || '', // 不再转换格式，保持和表单一致
-        skills: formData.hobbies ? formData.hobbies.split(',').map(s => s.trim()).filter(Boolean) : []
-      })
+      profile_attributes: {
+        college: formData.profile_attributes.college || '',
+        major: formData.profile_attributes.major || '',
+        grade: formData.profile_attributes.grade || '',
+        gender: formData.profile_attributes.gender || '',
+        hobby: Array.isArray(hobbies) ? hobbies : []
+      }
     }
 
     const result = await userAPI.updateUser(submitData)

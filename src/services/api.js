@@ -15,8 +15,10 @@ async function request(endpoint, options = {}) {
 
   // 如果本地存有 token，则自动注入 Authorization 头
   try {
+    // 支持通过 options.skipAuth 来跳过自动注入 Authorization（默认注入）
+    const skipAuth = options.skipAuth === true
     const token = localStorage.getItem('token')
-    if (token) {
+    if (!skipAuth && token) {
       config.headers = config.headers || {}
       config.headers['Authorization'] = `Bearer ${token}`
     }
@@ -29,6 +31,17 @@ async function request(endpoint, options = {}) {
   }
 
   try {
+    // 调试：显示是否设置了 Authorization 头（不打印完整 token）
+    try {
+      if (config.headers && config.headers.Authorization) {
+        console.debug('[api] Authorization header set')
+      } else {
+        console.debug('[api] No Authorization header')
+      }
+    } catch (e) {
+      // ignore console errors
+    }
+
     const response = await fetch(url, config)
     // 尝试解析 JSON（有些错误响应也是 JSON）
     let data
@@ -36,6 +49,18 @@ async function request(endpoint, options = {}) {
       data = await response.json()
     } catch (e) {
       data = null
+    }
+
+    // 如果是 401（未授权），统一处理：清理 token 并返回友好信息，便于前端引导登录
+    if (response.status === 401) {
+      try { localStorage.removeItem('token') } catch(e) {}
+      const errMsg = data && (data.detail || data.message) ? (Array.isArray(data.detail) ? data.detail.join('; ') : (data.detail || data.message)) : '令牌验证失败'
+      console.warn('[api] Unauthorized response, cleared local token')
+      return {
+        success: false,
+        message: errMsg,
+        status: 401
+      }
     }
 
     if (!response.ok) {
@@ -91,8 +116,9 @@ async function requestWithFile(endpoint, formData, options = {}) {
 
   // 如果有 token，自动添加 Authorization 头
   try {
+    const skipAuth = options.skipAuth === true
     const token = localStorage.getItem('token')
-    if (token) {
+    if (!skipAuth && token) {
       config.headers = config.headers || {}
       config.headers['Authorization'] = `Bearer ${token}`
     }
@@ -202,20 +228,34 @@ export const authAPI = {
 
 // 活动相关 API
 export const activityAPI = {
-  // 创建活动（支持文件上传）
-  async createActivity(formData) {
-    return requestWithFile('/api/activities/', formData, {
-      method: 'POST'
+  // 创建活动
+  async createActivity(activityData) {
+    return request('/activities/', {
+      method: 'POST',
+      body: activityData
     })
   },
 
-  // 上传封面图（独立接口，前端可在选择图片后立即上传）
-  async uploadCover(formData) {
-    // formData should be a FormData with a file field, e.g. fd.append('file', file)
-    return requestWithFile('/api/uploads/cover', formData, {
-      method: 'POST'
-    })
-  },
+  // 上传活动封面
+  // 上传活动封面
+async uploadCover(activityId, file) {
+  // 创建 FormData 对象
+  const formData = new FormData()
+  
+  // 添加 activity_id 字段
+  formData.append('activity_id', activityId)
+  
+  // 添加文件字段
+  formData.append('file', file)
+  
+  // 使用 requestWithFile 发送请求
+  // 如果你的后端上传接口不需要登录，可以传 { skipAuth: true }
+  // 否则去掉 skipAuth 让其自动带上本地 token
+  return requestWithFile('/uploads/images/activities/cover', formData, {
+    method: 'POST',
+    // skipAuth: true
+  })
+},
 
   // 删除已上传的文件（根据上传ID）
   async deleteUpload(uploadId) {
@@ -226,42 +266,50 @@ export const activityAPI = {
 
   // 获取活动列表
   async getActivities() {
-    return request('/api/activities/', {
+    return request('/activities/search/', {
       method: 'GET'
     })
   },
 
   // 获取某个活动的详情
   async getActivityDetails(activityId) {
-    return request(`/api/activities/${activityId}/`, {
+    return request(`/activities/${activityId}/`, {
       method: 'GET'
     })
   },
 
   // 更新某个活动的信息（支持文件上传）
   async updateActivity(activityId, formData) {
-    return requestWithFile(`/api/activities/${activityId}/`, formData, {
+    return requestWithFile(`/activities/${activityId}/`, formData, {
       method: 'PUT'
+    })
+  },
+
+  // 使用 JSON 更新活动字段（例如更新 cover_image 字段）
+  async setCoverImage(activityId, coverImagePath) {
+    return request(`/activities/${activityId}/`, {
+      method: 'PUT',
+      body: { cover_image: coverImagePath }
     })
   },
 
   // 删除某个活动
   async deleteActivity(activityId) {
-    return request(`/api/activities/${activityId}/`, {
+    return request(`/activities/${activityId}/`, {
       method: 'DELETE'
     })
   },
 
   // 搜索活动（对关键字进行编码）
   async searchactivity(keyword) {
-    return request(`/api/activities/search/?keyword=${encodeURIComponent(keyword)}`, {
+    return request(`/activities/search/}`, {
       method: 'GET'
     })
   },
 
   // 按分类获取活动
   async getActivitiesByCategory(category) {
-    return request(`/api/activities/category/${category}`)
+    return request(`/activities/search/`)
   },
 
   // 报名参加活动

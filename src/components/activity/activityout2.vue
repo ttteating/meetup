@@ -44,7 +44,7 @@
               placeholder="请输入活动名称"
               maxlength="50"
             >
-            <div class="char-count">{{ formData.title.length }}/50</div>
+            <div class="char-count">{{ (formData.title || '').length }}/50</div>
           </div>
 
           <div class="form-row">
@@ -78,8 +78,7 @@
               <input 
                 type="datetime-local" 
                 id="activity-time" 
-                :value="formatDateTimeForInput(formData.start_time)"
-                @input="e => formData.start_time = e.target.value"
+                v-model="formData.activity_time" 
                 required
               >
             </div>
@@ -89,8 +88,7 @@
             <input 
               type="datetime-local" 
               id="activity-end-time" 
-              :value="formatDateTimeForInput(formData.end_time)"
-              @input="e => formData.end_time = e.target.value"
+              v-model="formData.end_time" 
               required
             >
           </div>
@@ -117,7 +115,7 @@
               placeholder="请对活动流程、内容等进行简要介绍"
               maxlength="500"
             ></textarea>
-            <div class="char-count">{{ formData.description.length }}/500</div>
+            <div class="char-count">{{ (formData.description || '').length }}/500</div>
           </div>
         </div>
 
@@ -138,19 +136,19 @@
                 <input 
                   type="checkbox" 
                   :value="benefit.value" 
-                  v-model="formData.benefits.benefit"
+                  v-model="formData.benefits"
                 >
                 <span class="benefit-label">{{ benefit.label }}</span>
               </label>
             </div>
             <div class="benefits-description">
               <textarea 
-                v-model="formData.benefits.details" 
+                v-model="formData.benefits_details" 
                 rows="2" 
                 placeholder="请具体说明参与活动的收获，例如：可获得志愿时10小时、综测加分2分..."
                 maxlength="200"
               ></textarea>
-              <div class="char-count">{{ (formData.benefits.details || '').length }}/200</div>
+              <div class="char-count">{{ (formData.benefits?.details || '').length }}/200</div>
             </div>
           </div>
         </div>
@@ -199,7 +197,7 @@
                 <input 
                   type="radio" 
                   :value="category.value" 
-                  v-model="formData.category" 
+                  v-model="formData.target_audience.Activity_class" 
                   required
                 >
                 <span class="category-label">{{ category.label }}</span>
@@ -270,47 +268,31 @@
 
 <script setup>
 import { ref, reactive, onMounted } from 'vue'
-import { userStore } from '@/stores/userstore'
 import { useRouter } from 'vue-router'
 import { activityAPI } from '@/services/api'
 
 const router = useRouter()
 
-// 格式化日期时间为 datetime-local 输入所需的格式
-const formatDateTimeForInput = (dateStr) => {
-  if (!dateStr) return ''
-  const date = new Date(dateStr)
-  if (isNaN(date.getTime())) return ''
-  
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hours = String(date.getHours()).padStart(2, '0')
-  const minutes = String(date.getMinutes()).padStart(2, '0')
-  
-  return `${year}-${month}-${day}T${hours}:${minutes}`
-}
-
-// 表单数据 - 根据后端 ActivityBase 模型调整
+// 表单数据 - 根据后端ActivityBase模型调整
 const formData = reactive({
   title: '',
   description: '',
-  location: '华南农业大学',  // 默认值
-  start_time: '',  // 对应 activity_time
+  location: '华南农业大学',
+  activity_time: '', // 使用 activity_time，后端会以此作为 start_time
   end_time: '',
-  max_participants: 100,  // 默认值
-  tags: [],  // 活动标签
+  max_participants: 100,
+  organizer: '', // 活动发起人
+  tags: [], // 活动标签
   target_audience: {
-    Targeted_people: [],  // 年级
-    Activity_class: []  // 活动类型
+    Targeted_people: [], // 年级
+    Activity_class: [] // 活动类别，注意这里是数组
   },
-  category: '',  // 活动分类（单选）
   benefits: {
-    benefit: []  // 活动收益
+    benefit: [], // 活动收益
+    details: '' // 收益详情
   },
-  organizer: '',  // 额外字段：组织者
-  cover_image: null,  // 本地预览用
-  coverFile: null  // 实际文件对象
+  cover_image: '', // 本地预览用
+  coverFile: null // 实际文件对象
 })
 
 // 选项数据
@@ -325,7 +307,8 @@ const audienceOptions = ref([
   { value: '大二', label: '大二' },
   { value: '大三', label: '大三' },
   { value: '大四', label: '大四' },
-  { value: '研究生', label: '研究生' }
+  { value: '研究生', label: '研究生' },
+  { value: 'all', label: '不限年级' }
 ])
 
 const categoryOptions = ref([
@@ -340,16 +323,22 @@ const categoryOptions = ref([
 // 状态
 const submitting = ref(false)
 const fileInput = ref(null)
-const coverFile = ref(null) // 存储实际文件对象
-
+const coverFile = ref(null)
 
 // 处理面向人群选择
 const handleAudienceChange = (value) => {
-  const index = formData.target_audience.Targeted_people.indexOf(value)
-  if (index === -1) {
-    formData.target_audience.Targeted_people.push(value)
+  if (value === 'all') {
+    formData.target_audience.Targeted_people = ['大一', '大二', '大三', '大四', '研究生']
   } else {
-    formData.target_audience.Targeted_people.splice(index, 1)
+    const allGrades = ['大一', '大二', '大三', '大四', '研究生']
+    if (allGrades.includes(value)) {
+      const index = formData.target_audience.Targeted_people.indexOf(value)
+      if (index > -1) {
+        formData.target_audience.Targeted_people.splice(index, 1)
+      } else {
+        formData.target_audience.Targeted_people.push(value)
+      }
+    }
   }
 }
 
@@ -358,9 +347,8 @@ const triggerFileInput = () => {
   fileInput.value.click()
 }
 
-// 处理封面图上传
-// 修改后的 handleCoverUpload 方法
-const handleCoverUpload = async (event) => {
+// 处理封面图上传 - 现在只做本地预览
+const handleCoverUpload = (event) => {
   const file = event.target.files[0]
   if (!file) return
 
@@ -380,52 +368,41 @@ const handleCoverUpload = async (event) => {
   coverFile.value = file
   const localUrl = URL.createObjectURL(file)
   formData.cover_image = localUrl
-
-  // 同步上传到后端（立即上传）
-  // 注意：不要在未创建活动时用 0 作为 activityId 直接上传到后端，
-  // 这会导致后端拒绝或返回 401（如果未登录）或 400（无效 ID）。
-  // 我们只在此处做本地预览并保存文件对象，真正上传封面会在 submitForm
-  // 在创建活动并得到 activityId 后统一进行。
-  coverFile.value = file
 }
 
 // 移除封面图
 const removeCover = () => {
-  // 如果已经上传到服务器，尝试删除服务端文件
-  const uploadedId = formData.cover_image_id
-  if (uploadedId) {
-    activityAPI.deleteUpload(uploadedId).catch(err => {
-      console.warn('删除服务器端文件失败:', err)
-    })
-  }
-
-  // 如果是本地 blob URL，撤销引用
+  // 撤销blob URL
   try {
-    if (formData.cover_image && typeof formData.cover_image === 'string' && formData.cover_image.startsWith('blob:')) {
+    if (formData.cover_image && formData.cover_image.startsWith('blob:')) {
       URL.revokeObjectURL(formData.cover_image)
     }
   } catch (e) {
     // ignore
   }
 
-  formData.cover_image = null
+  formData.cover_image = ''
   formData.cover_image_id = null
   coverFile.value = null
-  if (fileInput.value) fileInput.value.value = '' // 重置文件输入
+  if (fileInput.value) fileInput.value.value = ''
 }
 
 // 重置表单
 const resetForm = () => {
   if (confirm('是否重置表单？所有已填写的内容将被清空。')) {
     Object.keys(formData).forEach(key => {
-      if (Array.isArray(formData[key])) {
+      if (key === 'target_audience') {
+        formData[key] = { Targeted_people: [], Activity_class: '' }
+      } else if (key === 'benefits') {
+        formData[key] = { benefit: [], details: '' }
+      } else if (Array.isArray(formData[key])) {
         formData[key] = []
       } else {
         formData[key] = ''
       }
     })
     removeCover()
-    setDefaultTime() // 重置默认时间
+    setDefaultTime()
   }
 }
 
@@ -459,9 +436,9 @@ const setDefaultTime = () => {
 // 保存草稿
 const saveDraft = () => {
   const draftData = { ...formData }
-  // 移除预览URL，因为不能存储到localStorage
+  // 移除预览URL
   if (draftData.cover_image && draftData.cover_image.startsWith('blob:')) {
-    draftData.cover_image = null
+    draftData.cover_image = ''
   }
   
   localStorage.setItem('activityDraft', JSON.stringify(draftData))
@@ -476,20 +453,16 @@ const validateForm = () => {
     errors.push('活动名称不能为空')
   }
   
-  if (!formData.organizer.trim()) {
-    errors.push('发布人/组织不能为空')
-  }
-  
   if (!formData.location.trim()) {
     errors.push('活动地点不能为空')
   }
   
   if (!formData.start_time) {
-    errors.push('活动时间不能为空')
+    errors.push('活动开始时间不能为空')
   }
   
-  if(!formData.end_time) {
-    errors.push('结束时间不能为空')
+  if (!formData.end_time) {
+    errors.push('活动结束时间不能为空')
   } else if (new Date(formData.end_time) <= new Date(formData.start_time)) {
     errors.push('结束时间必须晚于开始时间')
   }
@@ -502,11 +475,11 @@ const validateForm = () => {
     errors.push('招募人数必须大于0')
   }
   
-  if (!formData.target_audience || !Array.isArray(formData.target_audience.Targeted_people) || formData.target_audience.Targeted_people.length === 0) {
+  if (formData.target_audience.Targeted_people.length === 0) {
     errors.push('请选择面向人群')
   }
   
-  if (!formData.category) {
+  if (!formData.target_audience.Activity_class || formData.target_audience.Activity_class.length === 0) {
     errors.push('请选择活动分类')
   }
   
@@ -515,31 +488,20 @@ const validateForm = () => {
 
 // 准备表单数据用于提交
 const prepareFormData = () => {
-  // 根据后端 ActivityBase 模型构造数据
-  const toIso = (val) => {
-    if (!val) return null
-    try {
-      // If it's already an ISO-like string that ends with Z or includes seconds, Date will handle it.
-      const d = new Date(val)
-      if (isNaN(d.getTime())) return null
-      return d.toISOString()
-    } catch (e) {
-      return null
-    }
-  }
-
+  // 根据后端ActivityBase模型构造数据
   const submitData = {
     title: formData.title.trim(),
     description: formData.description.trim(),
     location: formData.location.trim(),
-    cover_image: formData.cover_image || '',
-    start_time: toIso(formData.start_time),
-    end_time: toIso(formData.end_time),
+    start_time: formData.activity_time, // 使用 activity_time 作为 start_time
+    end_time: formData.end_time,
     max_participants: parseInt(formData.max_participants) || 100,
     tags: formData.tags || [],
     target_audience: {
       Targeted_people: formData.target_audience.Targeted_people,
-      Activity_class: formData.category ? [formData.category] : ['校园生活']
+      Activity_class: formData.target_audience.Activity_class.length > 0 
+        ? [formData.target_audience.Activity_class] 
+        : ["校园生活"] // 提供默认值
     },
     benefits: {
       benefit: formData.benefits.benefit || []
@@ -549,14 +511,17 @@ const prepareFormData = () => {
   return submitData
 }
 
+// 提交表单
 const submitForm = async () => {
   // 确保已登录
   const token = localStorage.getItem('token')
-  if (!token) {
+  const userId = localStorage.getItem('user_id')
+  if (!token || !userId) {
     alert('请先登录后发布活动')
     router.push('/auth')
     return
   }
+  
   // 表单验证
   const errors = validateForm()
   if (errors.length > 0) {
@@ -567,47 +532,38 @@ const submitForm = async () => {
   submitting.value = true
 
   try {
-    // 先创建活动（使用 JSON 格式）
+    // 1. 先创建活动
     const activityData = prepareFormData()
-    // 补充额外字段（如果有）
-    activityData.organizer = formData.organizer || activityData.organizer
-    if (formData.benefits_details) activityData.benefits_details = formData.benefits_details
-
-  console.log('Posting activity payload:', activityData)
-  const response = await activityAPI.createActivity(activityData)
+    const response = await activityAPI.createActivity(activityData)
     
-    if (response.success) {
-      // 获取新创建的活动ID
+    if (response.success && response.data) {
       const activityId = response.data.id
       
-      // 如果有封面图片，上传封面，然后根据上传返回更新活动的 cover_image 字段（如果需要）
+      // 2. 如果有封面图片，上传封面
       if (coverFile.value) {
         try {
-          const coverResp = await activityAPI.uploadCover(activityId, coverFile.value)
-          if (!coverResp.success) {
-            console.warn('封面上传失败:', coverResp.message)
-          } else if (coverResp && coverResp.data) {
-            const d = coverResp.data
-            const coverPath = d.url || d.path || d.filename || d.file || d.key || (d.data && (d.data.url || d.data.path)) || null
-            if (coverPath) {
-              const setResp = await activityAPI.setCoverImage(activityId, coverPath)
-              if (!setResp.success) {
-                console.warn('设置活动 cover_image 失败:', setResp.message)
-              }
-            } else {
-              console.debug('封面上传返回但未找到路径字段，跳过 setCoverImage')
-            }
+          const formData = new FormData()
+          formData.append('activity_id', activityId)
+          formData.append('file', coverFile.value)
+          
+          const coverResponse = await activityAPI.uploadCover(activityId, formData)
+          if (coverResponse.success) {
+            console.log('封面上传成功:', coverResponse.filename)
+          } else {
+            console.warn('封面上传失败:', coverResponse.message)
           }
         } catch (err) {
-          console.error('封面上传失败或设置 cover_image 时出错:', err)
+          console.error('封面上传失败:', err)
+          // 封面上传失败不影响活动创建，只记录错误
         }
       }
       
-      // 清除草稿
+      // 3. 清除草稿
       localStorage.removeItem('activityDraft')
       
-      // 跳转到活动详情页
+      // 4. 跳转到活动详情页
       router.push(`/activities/${activityId}`)
+      alert('活动发布成功！')
     } else {
       alert(`发布失败：${response.message || '未知错误'}`)
     }
@@ -642,6 +598,7 @@ onMounted(() => {
   setDefaultTime()
 })
 </script>
+
 
 <style scoped>
 .activity-create-page {
