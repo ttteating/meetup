@@ -285,7 +285,7 @@ const displayName = computed(() => {
   const normalize = (v) => (v && v.toLowerCase() !== 'string' ? v : '')
   return normalize(nick) || normalize(uname) || '个人中心'
 })
-const userCenterLink = computed(() => {
+const userCenter = computed(() => {
   const id = (userStore.userInfo && (userStore.userInfo.id || userStore.userInfo.user_id)) || localStorage.getItem('user_id')
   return id ? `/user/${id}` : '/mycenter'
 })

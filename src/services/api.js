@@ -334,8 +334,15 @@ async uploadCover(activityId, file) {
   },
 
   // 获取我发布的活动
-  async getMyActivities() {
-    return request('/activities/organizer/my-activities')
+  async getMyActivities(page = 1, pageSize = 10) {
+    // 后端要求 page 和 page_size 作为 query 参数
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', page)
+    queryParams.append('page_size', pageSize)
+    const queryString = queryParams.toString()
+    return request(`/activities/organizer/my-activities/?${queryString}`, {
+      method: 'GET'
+    })
   },
 
   // 获取我报名的活动
@@ -410,27 +417,6 @@ async incrementActivityViews(activityId) {
   })
 },
 
-  // 获取收藏的活动
-async getFavoritedActivities() {
-    return request('/api/activities/favorites', {
-      method: 'GET'
-    })
-  },
-
-  // 收藏活动
-  async favoriteActivity(activityId) {
-    return request(`/api/activities/${activityId}/favorite`, {
-      method: 'POST'
-    })
-  },
-
-  // 取消收藏活动
-  async unfavoriteActivity(activityId) {
-    return request(`/api/activities/${activityId}/unfavorite`, {
-      method: 'POST'
-    })
-  },
-
   // 获取浏览历史
   async getViewHistory() {
     return request('/api/activities/history', {
@@ -480,10 +466,10 @@ async getFavoritedActivities() {
   },
 
   // 更新活动状态（发布/取消发布等）
+  // 后端接收 status 作为 QUERY 参数：PATCH /activities/{id}/status?status=published
   async updateActivityStatus(activityId, status) {
-    return request(`/activities/${activityId}/status`, {
-      method: 'PATCH',
-      body: { status }
+    return request(`/activities/${activityId}/status?status=${status}`, {
+      method: 'PATCH'
     })
   },
 
@@ -524,8 +510,8 @@ export const userAPI = {
   
   // 更新用户信息
   async updateUser(userData) {
-    return request('/auth/me', {
-      method: 'PUT',
+    return request('/users/me/', {
+      method: 'PATCH',
       body: userData
     })
   },

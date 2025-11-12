@@ -456,16 +456,91 @@ const setDefaultTime = () => {
   formData.end_time = `${endYear}-${endMonth}-${endDay}T${endHours}:${endMinutes}`
 }
 
-// 保存草稿
-const saveDraft = () => {
-  const draftData = { ...formData }
-  // 移除预览URL，因为不能存储到localStorage
-  if (draftData.cover_image && draftData.cover_image.startsWith('blob:')) {
-    draftData.cover_image = null
+// 保存草稿 - 调用后端创建活动，并设置状态为 draft
+const saveDraft = async () => {
+  // 确保已登录
+  const token = localStorage.getItem('token')
+  if (!token) {
+    alert('请先登录后保存草稿')
+    router.push('/auth')
+    return
   }
   
-  localStorage.setItem('activityDraft', JSON.stringify(draftData))
-  alert('草稿已保存')
+  // 表单验证
+  const errors = validateForm()
+  if (errors.length > 0) {
+    alert('请完善以下信息后保存草稿：\n' + errors.join('\n'))
+    return
+  }
+
+  submitting.value = true
+
+  try {
+    // 准备活动数据
+    const activityData = prepareFormData()
+    activityData.organizer = formData.organizer || activityData.organizer
+    if (formData.benefits_details) activityData.benefits_details = formData.benefits_details
+
+    console.log('Saving draft activity payload:', activityData)
+    const response = await activityAPI.createActivity(activityData)
+    
+    if (response.success) {
+      // 获取新创建的活动ID
+      const activityId = response.data.id
+      
+      // 更新活动状态为 draft（不发布）
+      try {
+        console.debug('[activityout] 保存草稿，activityId=', activityId)
+        const draftResponse = await activityAPI.unpublishActivity(activityId)
+        console.debug('[activityout] unpublishActivity 返回：', draftResponse)
+        
+        if (!draftResponse.success) {
+          console.warn('活动状态更新为草稿失败:', draftResponse.message)
+          alert(`草稿保存成功，但状态设置失败：${draftResponse.message || '未知错误'}`)
+        }
+      } catch (statusError) {
+        console.error('活动状态更新出错:', statusError)
+        alert('草稿保存成功，但状态设置时出错')
+      }
+      
+      // 如果有封面文件，则上传封面
+      if (coverFile.value) {
+        try {
+          const coverResp = await activityAPI.uploadCover(activityId, coverFile.value)
+          if (!coverResp.success) {
+            console.warn('封面上传失败:', coverResp.message)
+          } else if (coverResp && coverResp.data) {
+            const d = coverResp.data
+            const coverPath = d.url || d.path || d.filename || d.file || d.key || (d.data && (d.data.url || d.data.path)) || null
+            if (coverPath) {
+              const setResp = await activityAPI.setCoverImage(activityId, coverPath)
+              if (!setResp.success) {
+                console.warn('设置活动 cover_image 失败:', setResp.message)
+              }
+            } else {
+              console.debug('封面上传返回但未找到路径字段，跳过 setCoverImage')
+            }
+          }
+        } catch (err) {
+          console.error('封面上传失败或设置 cover_image 时出错:', err)
+        }
+      }
+      
+      // 清除本地草稿
+      localStorage.removeItem('activityDraft')
+      
+      // 成功提示并跳转到个人中心
+      alert('草稿已保存！')
+      router.push('/mycenter')
+    } else {
+      alert(`保存草稿失败：${response.message || '未知错误'}`)
+    }
+  } catch (error) {
+    console.error('保存草稿失败:', error)
+    alert('保存草稿失败，请稍后重试')
+  } finally {
+    submitting.value = false
+  }
 }
 
 // 表单验证
@@ -557,6 +632,7 @@ const submitForm = async () => {
     router.push('/auth')
     return
   }
+  
   // 表单验证
   const errors = validateForm()
   if (errors.length > 0) {
@@ -573,31 +649,30 @@ const submitForm = async () => {
     activityData.organizer = formData.organizer || activityData.organizer
     if (formData.benefits_details) activityData.benefits_details = formData.benefits_details
 
-  console.log('Posting activity payload:', activityData)
-  const response = await activityAPI.createActivity(activityData)
+    console.log('Posting activity payload:', activityData)
+    const response = await activityAPI.createActivity(activityData)
     
     if (response.success) {
       // 获取新创建的活动ID
       const activityId = response.data.id
       
-      // 优化发布/封面上传顺序：先尝试直接发布；若后端要求封面则上传封面并重试发布；
-      // 若已发布且仍有封面文件则在后台上传封面并更新 cover_image（不阻塞跳转）
-      let published = false
-
-      // 首次尝试发布（不依赖封面）
+      // 发布活动（更新状态为 published）
       try {
-        console.debug('[activityout] 首次尝试发布，activityId=', activityId)
-        const publishResp = await activityAPI.publishActivity(activityId)
-        console.debug('[activityout] publishActivity 首次返回：', publishResp)
-        if (publishResp && publishResp.success) {
-          published = true
+        console.debug('[activityout] 发布活动，activityId=', activityId)
+        const publishResponse = await activityAPI.publishActivity(activityId)
+        console.debug('[activityout] publishActivity 返回：', publishResponse)
+        
+        if (!publishResponse.success) {
+          console.warn('活动状态更新失败:', publishResponse.message)
+          alert(`活动创建成功，但发布状态更新失败：${publishResponse.message || '未知错误'}`)
         }
-      } catch (e) {
-        console.error('[activityout] publishActivity 首次调用出错：', e)
+      } catch (statusError) {
+        console.error('活动状态更新出错:', statusError)
+        alert('活动创建成功，但发布状态更新时出错，请稍后手动发布')
       }
-
-      // 如果首次发布未成功并且存在封面文件，则上传封面并设置 cover_image，然后重试发布一次
-      if (!published && coverFile.value) {
+      
+      // 如果有封面文件，则上传封面
+      if (coverFile.value) {
         try {
           const coverResp = await activityAPI.uploadCover(activityId, coverFile.value)
           if (!coverResp.success) {
@@ -617,20 +692,6 @@ const submitForm = async () => {
         } catch (err) {
           console.error('封面上传失败或设置 cover_image 时出错:', err)
         }
-      }
-      
-      // 更新活动状态为已发布（调用后端 PATCH /activities/{id}/status）
-      try {
-        console.debug('[activityout] 调用 publishActivity，activityId=', activityId)
-        const publishResponse = await activityAPI.publishActivity(activityId)
-        console.debug('[activityout] publishActivity 返回：', publishResponse)
-        if (!publishResponse.success) {
-          console.warn('活动状态更新失败:', publishResponse.message)
-          // 即使状态更新失败，仍然认为发布成功，因为活动已经创建
-        }
-      } catch (statusError) {
-        console.error('活动状态更新出错:', statusError)
-        // 即使状态更新出错，仍然认为发布成功，因为活动已经创建
       }
       
       // 清除草稿

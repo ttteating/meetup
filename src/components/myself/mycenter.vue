@@ -30,19 +30,15 @@
           </div>
           <div class="stats-section">
             <div class="stat-item">
-              <div class="stat-number">{{ createdActivities.length }}</div>
+              <div class="stat-number">{{ createdActivities.length ||0}}</div>
               <div class="stat-label">我创建的</div>
             </div>
             <div class="stat-item">
-              <div class="stat-number">{{ joinedActivities.length }}</div>
+              <div class="stat-number">{{ joinedActivities.length ||0}}</div>
               <div class="stat-label">我的报名</div>
             </div>
             <div class="stat-item">
-              <div class="stat-number">{{ favoritedActivities.length }}</div>
-              <div class="stat-label">我的收藏</div>
-            </div>
-            <div class="stat-item">
-              <div class="stat-number">{{ viewedActivities.length }}</div>
+              <div class="stat-number">{{ viewedActivities.length ||0}}</div>
               <div class="stat-label">历史浏览</div>
             </div>
           </div>
@@ -124,23 +120,26 @@
             <option value="other">其他</option>
           </select>
         </div>
-        <div class="form-group">
-          <label class="form-label">兴趣爱好</label>
-          <div v-if="!isEditing" class="hobby-tags">
-            <span v-for="(hobby, index) in formData.profile_attributes.hobby" 
-                  :key="index" 
-                  class="hobby-tag">
-              {{ hobby }}
-            </span>
-          </div>
-          <input v-else
-            v-model="formData.profile_attributes.hobby"
-            type="text"
-            class="form-input"
-            :class="{ 'form-input-editing': isEditing }"
-            placeholder="请用逗号分隔多个兴趣爱好"
-          />
-        </div>
+ <!-- 替换原有的兴趣爱好表单项 -->
+<div class="form-group">
+  <label class="form-label">兴趣爱好</label>
+  <input
+    v-if="isEditing"
+    v-model="formData.profile_attributes.hobby"
+    type="text"
+    class="form-input"
+    :class="{ 'form-input-editing': isEditing }"
+    placeholder="请用逗号分隔多个兴趣爱好"
+  />
+  <div v-else class="form-input form-input-editing">
+    <span v-if="Array.isArray(formData.profile_attributes.hobby)">
+      {{ formData.profile_attributes.hobby.join(', ') }}
+    </span>
+    <span v-else>
+      {{ formData.profile_attributes.hobby }}
+    </span>
+  </div>
+</div>
         <div class="form-group">
           <label class="form-label">学院</label>
           <input
@@ -234,11 +233,6 @@
           <!-- 我的报名内容保持不变 -->
         </div>
 
-        <!-- 我的收藏选项卡 -->
-        <div v-if="activeTab === 'favorites'" class="tab-content">
-          <!-- 我的收藏内容保持不变 -->
-        </div>
-
         <!-- 历史浏览选项卡 -->
         <div v-if="activeTab === 'history'" class="tab-content">
           <!-- 历史浏览内容保持不变 -->
@@ -252,7 +246,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { userStore } from '@/stores/userstore'
-import { userAPI, activityAPI } from '@/services/api'
+import { userAPI, activityAPI, API_BASE_URL } from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -274,7 +268,6 @@ const loading = reactive({
 const tabs = [
   { id: 'created', name: '我创建的', icon: 'icon-create' },
   { id: 'joined', name: '我的报名', icon: 'icon-join' },
-  { id: 'favorites', name: '我的收藏', icon: 'icon-favorite' },
   { id: 'history', name: '历史浏览', icon: 'icon-history' },
   { id: 'profile', name: '个人信息', icon: 'icon-user' }
 ]
@@ -298,7 +291,6 @@ const formData = reactive({
 // 活动数据 - 添加我创建的活动
 const createdActivities = ref([])
 const joinedActivities = ref([])
-const favoritedActivities = ref([])
 const viewedActivities = ref([])
 
 // 字段错误信息
@@ -439,9 +431,31 @@ const loadUserInfo = async () => {
 const loadCreatedActivities = async () => {
   loading.created = true
   try {
-    const result = await activityAPI.getMyActivities()
+    // 调用 getMyActivities 时传递分页参数（默认第1页，每页10条）
+    const result = await activityAPI.getMyActivities(1, 10)
     if (result.success) {
-      createdActivities.value = result.data
+      // 后端返回结构可能是 { items: [...], total: number } 或直接是数组
+      let items = []
+      if (result.data && Array.isArray(result.data.items)) {
+        items = result.data.items
+      } else if (Array.isArray(result.data)) {
+        items = result.data
+      } else {
+        console.error('活动数据格式不符:', result.data)
+        items = []
+      }
+      
+      // 规范化活动数据：从 cover_image 映射到 image 字段，用于模板显示
+      createdActivities.value = items.map(item => ({
+        ...item,
+        // 将后端的 cover_image 映射为模板所用的 image 字段
+        image: item.cover_image || item.image || ''
+      }))
+      
+      // 异步为每个活动解析和检测真实的封面 URL
+      createdActivities.value.forEach(activity => {
+        resolveCoverImageIfNeeded(activity)
+      })
     } else {
       console.error('获取创建的活动失败:', result.message)
       alert('获取创建的活动失败')
@@ -479,25 +493,6 @@ const loadJoinedActivities = async () => {
   }
 }
 
-// 加载收藏活动
-const loadFavoritedActivities = async () => {
-  loading.favorites = true
-  try {
-    const result = await activityAPI.getFavoritedActivities()
-    if (result.success) {
-      favoritedActivities.value = result.data
-    } else {
-      console.error('获取收藏活动失败:', result.message)
-      alert('获取收藏活动失败')
-    }
-  } catch (error) {
-    console.error('加载收藏活动错误:', error)
-    alert('加载收藏活动失败，请检查网络连接')
-  } finally {
-    loading.favorites = false
-  }
-}
-
 // 加载浏览历史
 const loadViewHistory = async () => {
   loading.history = true
@@ -530,11 +525,6 @@ const switchTab = (tabId) => {
     case 'joined':
       if (joinedActivities.value.length === 0) {
         loadJoinedActivities()
-      }
-      break
-    case 'favorites':
-      if (favoritedActivities.value.length === 0) {
-        loadFavoritedActivities()
       }
       break
     case 'history':
@@ -708,45 +698,6 @@ const joinActivity = async (activityId) => {
   }
 }
 
-// 切换收藏状态
-const toggleFavorite = async (activityId) => {
-  if (loading.favoriteOperation) return
-  
-  loading.favoriteOperation = true
-  try {
-    const isCurrentlyFavorited = favoritedActivities.value.some(
-      activity => activity.id === activityId
-    )
-    
-    let result
-    if (isCurrentlyFavorited) {
-      result = await activityAPI.unfavoriteActivity(activityId)
-    } else {
-      result = await activityAPI.favoriteActivity(activityId)
-    }
-    
-    if (result.success) {
-      if (isCurrentlyFavorited) {
-        // 取消收藏，从列表中移除
-        favoritedActivities.value = favoritedActivities.value.filter(
-          activity => activity.id !== activityId
-        )
-        alert('已取消收藏')
-      } else {
-        // 添加到收藏，重新加载收藏列表确保数据最新
-        await loadFavoritedActivities()
-        alert('已添加到收藏')
-      }
-    } else {
-      alert(`操作失败: ${result.message}`)
-    }
-  } catch (error) {
-    console.error('收藏操作错误:', error)
-    alert('操作失败，请稍后重试')
-  } finally {
-    loading.favoriteOperation = false
-  }
-}
 
 // 从历史记录中移除
 const removeFromHistory = async (activityId) => {
@@ -815,6 +766,63 @@ const getStatusText = (status) => {
   return statusMap[status] || status
 }
 
+// --- 图片解析与探测逻辑（与 activitylist.vue 一致）---
+const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
+
+// 根据活动ID生成候选图片URL列表
+const staticCandidatesFor = (item) => {
+  const id = item.id
+  const candidates = []
+
+  // 按 activityId 构造常见命名候选（后端以 activityId 命名封面）
+  if (id !== undefined && id !== null) {
+    // 使用后端的静态路径 TopActivities，尝试多种扩展名
+    imageExtensions.forEach(ext => {
+      candidates.push(`${API_BASE_URL}/static/img/TopActivities/${id}.${ext}`)
+    })
+  }
+
+  return candidates
+}
+
+// 检查图片URL是否有效
+const checkImage = (url) => {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => resolve(true)
+    img.onerror = () => resolve(false)
+    // 添加缓存破坏参数以避免过期的 404 响应缓存
+    img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
+    // 安全超时
+    setTimeout(() => resolve(false), 3000)
+  })
+}
+
+// 尝试多种候选URL，找到第一个可访问的图片并更新 activity.image
+const resolveCoverImageIfNeeded = async (item) => {
+  // 如果已经是完整可用的 HTTP URL，则不做探测
+  if (!item) return
+  const cur = item.image || ''
+  if (/^https?:\/\//i.test(cur)) return
+
+  const candidates = staticCandidatesFor(item)
+  for (const c of candidates) {
+    // 跳过重复和空字符串
+    if (!c) continue
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await checkImage(c)
+      if (ok) {
+        item.image = c
+        return
+      }
+    } catch (e) {
+      // 忽略错误，继续尝试下一个候选
+    }
+  }
+  // 如果都不行，维持占位图（模板会显示 placeholder）
+}
+
 // 退出登录
 const handleLogout = async () => {
   if (confirm('确定要退出登录吗？')) {
@@ -827,6 +835,17 @@ const handleLogout = async () => {
       router.push('/')
     }
   }
+}
+
+// 解析兴趣爱好字符串或数组
+const parseHobbies = (hobbies) => {
+  if (Array.isArray(hobbies)) {
+    return hobbies.filter(h => h.trim() !== '');
+  }
+  if (typeof hobbies === 'string' && hobbies.trim() !== '') {
+    return hobbies.split(',').map(h => h.trim()).filter(h => h !== '');
+  }
+  return [];
 }
 
 //组件挂载完成后执行
@@ -985,6 +1004,8 @@ onMounted(() => {
   font-weight: bold;
   color: #ff6b00;
   margin-bottom: 0.5rem;
+  min-width:2rem;
+  text-align: center;
 }
 
 .stat-label {
@@ -1516,5 +1537,30 @@ onMounted(() => {
   .nav-links {
     gap: 1rem;
   }
+}
+
+.hobby-display {
+  padding: 0.75rem;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #fafafa;
+  min-height: 2.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.hobby-tag-display {
+  background: #ff6b00;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 12px;
+  font-size: 0.85rem;
+}
+
+.no-hobby {
+  color: #999;
+  font-style: italic;
 }
 </style>
