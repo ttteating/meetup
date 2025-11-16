@@ -264,7 +264,7 @@ async uploadCover(activityId, file) {
 
   // 获取活动列表
   async getActivities() {
-    return request('/activities/search/', {
+    return request('/activities/search', {
       method: 'GET'
     })
   },
@@ -300,14 +300,14 @@ async uploadCover(activityId, file) {
 
   // 搜索活动（对关键字进行编码）
   async searchactivity(keyword) {
-    return request(`/activities/search/`, {
+    return request(`/activities/search`, {
       method: 'GET'
     })
   },
 
   // 按分类获取活动
   async getActivitiesByCategory(category) {
-    return request(`/activities/search/`)
+    return request(`/activities/search`)
   },
 
   // 报名参加活动
@@ -326,9 +326,20 @@ async uploadCover(activityId, file) {
     })
   },
 
-  // 取消报名
-  async cancelJoin(activity_id) {
-    return request(`/api/activities/${activity_id}/cancel`, {
+  // 获取我报名的活动（返回当前登录用户的所有报名记录）
+  async getJoinedActivities(page = 1, pageSize = 10) {
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', page)
+    queryParams.append('page_size', pageSize)
+    const queryString = queryParams.toString()
+    return request(`/registrations/my/?${queryString}`, {
+      method: 'GET'
+    })
+  },
+
+  // 取消报名（根据报名ID进行删除）
+  async cancelJoin(registrationId) {
+    return request(`/registrations/${registrationId}/cancel/`, {
       method: 'POST'
     })
   },
@@ -345,10 +356,16 @@ async uploadCover(activityId, file) {
     })
   },
 
-  // 获取我报名的活动
-  async getJoinedActivities() {
-    // 个人报名记录列表（需要登录）
-    return request('/registrations/my/', {
+  // 获取特定活动的所有报名信息（管理员/组织者使用）
+  async getActivityRegistrations(activityId, page = 1, pageSize = 10, status = '') {
+    const queryParams = new URLSearchParams()
+    queryParams.append('page', page)
+    queryParams.append('page_size', pageSize)
+    if (status) {
+      queryParams.append('status', status)
+    }
+    const queryString = queryParams.toString()
+    return request(`/registrations/activity/${activityId}?${queryString}`, {
       method: 'GET'
     })
   },
@@ -370,8 +387,9 @@ async uploadCover(activityId, file) {
     if (filters.categories && filters.categories.length > 0) {
       queryParams.append('categories', filters.categories.join(','))
     }
-    if (filters.timeRange && filters.timeRange.length > 0) {
-      queryParams.append('time_range', filters.timeRange.join(','))
+    // timeRange 是单个字符串值（this_week|two_weeks|one_month），不是数组
+    if (filters.timeRange) {
+      queryParams.append('time_range', filters.timeRange)
     }
     if (filters.sortBy) {
       queryParams.append('sort_by', filters.sortBy)
@@ -390,8 +408,8 @@ async uploadCover(activityId, file) {
     }
 
     const queryString = queryParams.toString()
-    // 使用统一的搜索接口 /activities/search/ 并在有查询时附加查询字符串
-    const url = queryString ? `/activities/search/?${queryString}` : '/activities/search/'
+    // 使用统一的搜索接口 /activities/search 并在有查询时附加查询字符串
+    const url = queryString ? `/activities/search?${queryString}` : '/activities/search'
 
     return request(url, {
       method: 'GET'
@@ -400,7 +418,6 @@ async uploadCover(activityId, file) {
 
   //检查用户是否已报名活动
   async checkJoinStatus(activityId) {
-    // 查询个人报名记录并在前端判断是否包含该活动
     const res = await request(`/registrations/my/`, {
       method: 'GET'
     })
@@ -417,26 +434,7 @@ async incrementActivityViews(activityId) {
   })
 },
 
-  // 获取浏览历史
-  async getViewHistory() {
-    return request('/api/activities/history', {
-      method: 'GET'
-    })
-  },
 
-  // 清空浏览历史
-  async clearViewHistory() {
-    return request('/api/activities/history', {
-      method: 'DELETE'
-    })
-  },
-
-  // 从历史记录中移除单个活动
-  async removeFromHistory(activityId) {
-    return request(`/api/activities/history/${activityId}`, {
-      method: 'DELETE'
-    })
-  },
   // 获取活动参与者列表
   async getActivityParticipants(activityId) {
     return request(`/api/activities/${activityId}/participants`, {
@@ -445,17 +443,19 @@ async incrementActivityViews(activityId) {
   },
 
   // 获取活动统计数据（包括浏览量等）
+  // 注：使用详情接口，因为 /activities/{id}/ 已包含 views_count 字段
   async getActivityStats(activityId) {
-    return request(`/api/activities/${activityId}/stats`, {
+    return request(`/activities/${activityId}/`, {
       method: 'GET'
     })
   },
 
   // 检查是否可以修改活动
-  async checkActivityEditable(activityId) {
-    return request(`/api/activities/${activityId}/check-edit`, {
-      method: 'GET'
-    })
+    async checkActivityEditable(activityId) {
+      // 后端路由为 /activities/{activity_id}/check-edit（无 /api 前缀）
+      return request(`/activities/${activityId}/check-edit`, {
+        method: 'GET'
+      })
   },
 
   // 导出参与者数据
@@ -481,7 +481,49 @@ async incrementActivityViews(activityId) {
   // 取消发布活动（将状态设置为草稿）
   async unpublishActivity(activityId) {
     return this.updateActivityStatus(activityId, 'draft')
+  },
+
+  // 更新报名状态（审批/拒绝报名等）
+  async updateRegistrationStatus(registrationId, status, feedback = '') {
+    const body = {
+      status,
+      feedback
+    }
+    return request(`/registrations/${registrationId}/status`, {
+      method: 'PATCH',
+      body
+    })
+  },
+
+  // 获取推荐活动列表
+  async getRecommendedActivities(count = 5, options = {}) {
+    // 默认选项
+    const defaultOptions = {
+      exclude_viewed: true,
+      exclude_registered: true,
+      exclude_ended: true
+    }
+    
+    const body = {
+      count,
+      ...defaultOptions,
+      ...options
+    }
+    
+    return request('/recommendations/for-me', {
+      method: 'POST',
+      body
+    })
   }
+}
+
+// 以 JSON 更新活动详情（不上传文件）
+// 请求体应当符合后端活动详情规范（title, description, cover_image, location, start_time, end_time, max_participants, tags, target_audience, benefits, ...）
+activityAPI.updateActivityDetails = async function(activity_id, data) {
+  return request(`/activities/${activity_id}/`, {
+    method: 'PUT',
+    body: data
+  })
 }
 
 // 在api.js中添加用户相关API
@@ -510,10 +552,23 @@ export const userAPI = {
   
   // 更新用户信息
   async updateUser(userData) {
-    return request('/users/me/', {
+    // 尝试两个可能的端点：/users/me/ 和 /auth/me/
+    // 优先尝试 /users/me/，如果失败则尝试 /auth/me/
+    let result = await request('/users/me/', {
       method: 'PATCH',
       body: userData
     })
+    
+    // 如果第一个端点失败且返回 404，尝试备用端点
+    if (!result.success && result.status === 404) {
+      console.log('尝试备用端点 /auth/me/')
+      result = await request('/auth/me/', {
+        method: 'PATCH',
+        body: userData
+      })
+    }
+    
+    return result
   },
   
   // 检查登录状态
@@ -528,6 +583,54 @@ export const userAPI = {
     return request('/api/auth/logout', {
       method: 'POST'
     })
+  }
+}
+
+// 用户操作日志相关 API（管理/审计用途）
+export const userLogsAPI = {
+  // 获取用户操作日志（支持按 user_id / activity_id / 时间等筛选）
+  // params: { user_id, activity_id, operation_type, start_time, end_time, sort_by, page, page_size }
+  async getUserLogs(params = {}) {
+    const query = new URLSearchParams()
+    Object.keys(params || {}).forEach(k => {
+      if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+        query.append(k, params[k])
+      }
+    })
+    const qs = query.toString()
+    const url = qs ? `/user-logs?${qs}` : '/user-logs'
+    return request(url, { method: 'GET' })
+  },
+
+  // 获取当前用户的浏览历史记录
+  // params: { page, page_size, sort_by }
+  async getUserViewHistory(page = 1, pageSize = 10, sortBy = 'created_at') {
+    const query = new URLSearchParams()
+    query.append('page', page)
+    query.append('page_size', pageSize)
+    if (sortBy) {
+      query.append('sort_by', sortBy)
+    }
+    const qs = query.toString()
+    return request(`/user-logs/my/history?${qs}`, { method: 'GET' })
+  },
+
+  // 批量删除用户操作日志，传入逗号分隔的 log_ids 字符串
+  // 示例: log_ids = '1,2,3'
+  async deleteUserLogsBatch(log_ids) {
+    const query = new URLSearchParams()
+    query.append('log_ids', log_ids)
+    return request(`/user-logs?${query.toString()}`, { method: 'DELETE' })
+  },
+
+  // 获取单条日志详情
+  async getUserLog(log_id) {
+    return request(`/user-logs/${log_id}`, { method: 'GET' })
+  },
+
+  // 删除单条日志
+  async deleteUserLog(log_id) {
+    return request(`/user-logs/${log_id}`, { method: 'DELETE' })
   }
 }
 

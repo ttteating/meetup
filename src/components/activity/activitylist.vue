@@ -6,45 +6,26 @@
       <div class="nav-container">
         <div class="nav-left">
           <div class="logo">
-            <img src="@/assets/logo.png" alt="觅活—MeetHub">
+            <img src="@/assets/logo.png" alt="觅活—MeetHub" class="logo-img">
             <span class="logo-text">觅活—MeetHub</span>
           </div>
-           <div class="nav-links">
-             <router-link to="/" class="nav-link active">首页</router-link>
-             <a href="#" class="nav-link">分类</a>
-           </div>
-        </div>
-        
-        <div class="nav-center">
-          <div class="search-box">
-            <input 
-              type="text" 
-              v-model="searchKeyword"
-              placeholder="输入搜索关键词" 
-              @keyup.enter="handleSearch"
-            >
-            <button class="search-btn" @click="handleSearch">
-              🔍
-            </button>
+          <div class="nav-menu">
+            <router-link to="/recommendations" class="nav-menu-item">首页</router-link>
+            <router-link to="/activitylist" class="nav-menu-item active">分类</router-link>
           </div>
         </div>
         
-      <div class="nav-right">
-    <template v-if="userStore.isLoggedIn && userStore.userInfo">
-      <div class="user-info">
-        <router-link to="/activity" class="create-activity-btn">发布活动</router-link>
-        <button class="username-btn" @click="goToProfile">
-          {{ userStore.userInfo.username }}
-        </button>
-        <span class="user-location" v-if="userStore.userInfo.location">{{ userStore.userInfo.location }}</span>
-        <button class="logout-btn" @click="handleLogout">退出</button>
-      </div>
-    </template>
-    <template v-else>
-      <router-link to="/auth" class="nav-link">注册/登录</router-link>
-    </template>
-  </div>
-
+        <div class="nav-right">
+          <button class="create-btn" @click="goToCreate">
+            🎯 免费创建
+          </button>
+          <template v-if="isLoggedIn">
+            <router-link :to="userCenter" class="nav-link">{{ displayName }}</router-link>
+          </template>
+          <template v-else>
+            <router-link to="/auth" class="nav-link">注册/登录</router-link>
+          </template>
+        </div>
       </div>
     </nav>
 
@@ -263,6 +244,19 @@ onMounted(async () => {
   initData()
 })
 
+// 导航栏相关计算属性
+const isLoggedIn = computed(() => userStore.isLoggedIn)
+const displayName = computed(() => userStore.userInfo?.username || '用户')
+const userCenter = computed(() => {
+  const id = (userStore.userInfo && (userStore.userInfo.id || userStore.userInfo.user_id)) || localStorage.getItem('user_id')
+  return id ? `/user/${id}` : '/auth'
+})
+
+// 导航栏相关方法
+const goToCreate = () => {
+  router.push('/activity')
+}
+
 // 添加退出登录方法
 const handleLogout = () => {
   userStore.clearUser()
@@ -355,13 +349,20 @@ const fetchActivities = async () => {
         benefits: filters.benefits && filters.benefits.length ? filters.benefits : undefined,
         audience: filters.audience && filters.audience.length ? filters.audience.map(a => audienceMap[a] || a) : undefined,
         categories: filters.categories && filters.categories.length ? filters.categories.map(c => categoryMap[c] || c) : undefined,
-        timeRange: filters.timeRange && filters.timeRange.length ? filters.timeRange : undefined,
+        // timeRange 后端只接受单个值（this_week|two_weeks|one_month），不是数组
+        // 如果前端选中多个时间范围，只取第一个；如果没有选中，则不传此参数
+        timeRange: filters.timeRange && filters.timeRange.length ? filters.timeRange[0] : undefined,
         page: currentPage.value,
         pageSize: pageSize,
         sortBy: sortByMap[sortBy.value] || 'created_at' // 默认按创建时间
       }
 
+      // 调试：打印实际发送的参数
+      console.log('[fetchActivities] 发送参数:', params)
+
       const result = await activityAPI.getActivitiesWithFilters(params)
+      console.log('[fetchActivities] 返回结果:', result)
+      
       if (result.success) {
         // 后端返回结构 { total, items: [...] }
         const items = result.data.items || []
@@ -500,10 +501,6 @@ const joinActivity = async (activityId) => {
   }
 }
 
-const goToCreate = () => {
-  router.push('/activity')
-}
-
 // --- 图片解析与探测逻辑 ---
 // 尝试多种候选 URL（基于后端可能的静态路径与命名规则），找到第一个可访问的图片并更新 activity.cover_image
 const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
@@ -587,135 +584,128 @@ watch([searchKeyword, filters, sortBy], () => {
 <style scoped>
 .activity-list-page {
   min-height: 100vh;
-  background-color: #f8f9fa;
+  background: linear-gradient(135deg, #FFF8F0 0%, #F8F9FB 100%);
 }
 
-/* 导航栏样式 */
+/* 导航栏 */
 .main-nav {
-  background: white;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  background: linear-gradient(135deg, #FF8519 0%, #FF9E47 100%);
+  box-shadow: 0 4px 12px rgba(255, 133, 25, 0.15);
   position: sticky;
   top: 0;
-  z-index: 1000;
+  z-index: 100;
 }
 
 .nav-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 12px 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 16px 24px;
 }
 
 .nav-left {
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 20px;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 30px;
+}
+
+.nav-menu-item {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 16px;
+  padding: 6px 0;
+  border-bottom: 3px solid transparent;
+  transition: all 0.3s ease;
+}
+
+.nav-menu-item:hover {
+  border-bottom-color: rgba(255, 255, 255, 0.5);
+}
+
+.nav-menu-item.active {
+  border-bottom-color: #fff;
+}
+
+.nav-menu-item.router-link-active {
+  border-bottom-color: #fff;
 }
 
 .logo {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  cursor: pointer;
+  transition: transform 0.2s ease;
 }
 
-.logo img {
-  height: 40px;
+.logo:hover {
+  transform: scale(1.02);
+}
+
+.logo-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
 }
 
 .logo-text {
-  font-size: 20px;
-  font-weight: 700;
-  color: #ff7e5f;
-}
-
-.nav-links {
-  display: flex;
-  gap: 24px;
-}
-
-.nav-center {
-  flex: 1;
-  max-width: 400px;
-  margin: 0 40px;
-}
-
-.search-box {
-  display: flex;
-  background: #f8f9fa;
-  border-radius: 25px;
-  padding: 8px 16px;
-  border: 2px solid #e9ecef;
-  transition: all 0.3s;
-}
-
-.search-box:focus-within {
-  border-color: #ff7e5f;
-  box-shadow: 0 0 0 3px rgba(255, 126, 95, 0.1);
-}
-
-.search-box input {
-  flex: 1;
-  border: none;
-  background: transparent;
-  outline: none;
-  font-size: 16px;
-  padding: 4px 8px;
-}
-
-.search-btn {
-  background: none;
-  border: none;
-  cursor: pointer;
   font-size: 18px;
-  padding: 4px 8px;
+  font-weight: 700;
+  color: #fff;
+  letter-spacing: 0.5px;
 }
 
 .nav-right {
   display: flex;
   align-items: center;
-  gap: 20px;
-}
-
-.nav-link {
-  color: #495057;
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.3s;
-}
-
-.nav-link:hover,
-.nav-link.active {
-  color: #ff7e5f;
-}
-
-.nav-link.router-link-active {
-  color: #ff7e5f;
+  gap: 16px;
 }
 
 .create-btn {
-  background: #ff7e5f;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 25px;
+  padding: 8px 16px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 20px;
+  font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.3s;
+  transition: all 0.3s ease;
 }
 
 .create-btn:hover {
-  background: #ff6b4a;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 126, 95, 0.3);
+  background: rgba(255, 255, 255, 0.3);
+  border-color: rgba(255, 255, 255, 0.6);
+  transform: scale(1.05);
+}
+
+.nav-link {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background 0.2s ease;
+}
+
+.nav-link:hover {
+  background: rgba(255, 255, 255, 0.2);
 }
 
 /* 筛选区域样式 */
 .filter-section {
-  background: white;
+  background: #fff;
   border-bottom: 1px solid #e9ecef;
   padding: 20px 0;
+  margin-top: 20px;
 }
 
 .filter-container {

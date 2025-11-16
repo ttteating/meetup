@@ -119,7 +119,6 @@
               <span v-else>立即报名</span>
             </button>
 
-            <!--考虑要不要保留-->
             <div class="join-tips">
               <div class="tip-item">✓ 免费参与</div>
               <div class="tip-item">✓ 随时取消</div>
@@ -216,7 +215,6 @@
             </div>
           </div>
 
-        
           </div>
         </div>
       </div>
@@ -258,8 +256,6 @@ const isFull = computed(() => {
   return activity.value.current_participants >= activity.value.max_participants
 })
 
-//添加逻辑查看是否超过了报名时间，如果超过了，显示不可报名防止用户误触
-//同时检查活动状态是否为已发布(published)
 const isJoinable = computed(() => {
   const a = activity.value
   if (!a) return false
@@ -456,7 +452,7 @@ const fetchActivityDetail = async () => {
     activity.value = activityData
 
     // 解析封面图
-    resolveCoverForDetail(activity.value)
+    await resolveCoverForDetail(activity.value)
 
     // 检查报名状态
     await checkJoinStatus()
@@ -464,57 +460,79 @@ const fetchActivityDetail = async () => {
   } catch (err) {
     console.error('获取活动详情错误:', err)
     error.value = '网络错误，请检查连接后重试'
-    // 使用模拟数据
     activity.value = null
   } finally {
     loading.value = false
   }
 }
-// 解析详情页封面图片的简单探测器（优先使用 cover_image，如果空则尝试 static 路径）
+
+// 检查图片URL是否有效
 const checkImage = (url) => {
   return new Promise(resolve => {
     const img = new Image()
     img.onload = () => resolve(true)
     img.onerror = () => resolve(false)
+    // 添加缓存破坏参数以避免过期的 404 响应缓存
     img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
+    // 安全超时
     setTimeout(() => resolve(false), 3000)
   })
 }
 
+// 图片扩展名列表
+const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
+
+// 根据活动ID生成候选静态图片URL列表
+const getStaticCandidates = (item) => {
+  const id = item.id
+  const candidates = []
+
+  if (id !== undefined && id !== null) {
+    // 使用后端的静态路径 TopActivities，尝试多种扩展名
+    imageExtensions.forEach(ext => {
+      candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.${ext}`)
+    })
+  }
+
+  return candidates
+}
+
+// 解析活动详情页的封面图片
+// 优先尝试使用 cover_image URL，失败后回退到静态资源库
 const resolveCoverForDetail = async (item) => {
   if (!item) return
   const cur = item.cover_image || ''
 
- //图片处理逻辑
-  const asHintExt = (() => {
-    const v = (cur || '').trim()
-    if (!v) return ''
-    // 只有扩展名，如 'jpg' 或 '.png'
-    if (/^\.[a-zA-Z0-9]+$/.test(v) || /^[a-zA-Z0-9]+$/.test(v)) {
-      return v.replace('.', '')
-    }
-    // 文件名带扩展，如 '5.png' 或 'cover.JPG'
-    const m = v.match(/\.([a-zA-Z0-9]+)$/)
-    return m ? m[1] : ''
-  })()
-  if (asHintExt && item.id !== undefined && item.id !== null) {
-    const candidate = `${API_BASE_URL_IMPORT}/static/img/TopActivities/${item.id}.${asHintExt}`
-    if (await checkImage(candidate)) {
-      item.cover_image = candidate
+  // 如果已经是完整的HTTP URL，则先尝试该URL
+  if (/^https?:\/\//i.test(cur)) {
+    // 尝试直接使用提供的URL
+    if (await checkImage(cur)) {
+      item.cover_image = cur
       return
+    }
+    // URL失败，回退到静态资源库
+  }
+
+  // 尝试静态资源库候选
+  const candidates = getStaticCandidates(item)
+  for (const c of candidates) {
+    if (!c) continue
+    try {
+      // eslint-disable-next-line no-await-in-loop
+      const ok = await checkImage(c)
+      if (ok) {
+        item.cover_image = c
+        return
+      }
+    } catch (e) {
+      // 忽略错误，继续尝试下一个候选
     }
   }
 
-  
-  // 后端若返回了占位 “string” 或空，强制使用静态路径再尝试一次
+  // 如果都不行，维持原值或清空
   if (!cur || cur === 'string') {
-    const id2 = item.id
-    if (id2 !== undefined && id2 !== null) {
-      const ok2 = await tryStaticById(id2)
-      if (ok2) return
-    }
+    item.cover_image = ''
   }
-  item.cover_image = item.cover_image && item.cover_image.startsWith('/') ? `${API_BASE_URL_IMPORT}${item.cover_image}` : ''
 }
 
 const checkJoinStatus = async () => {
@@ -790,15 +808,6 @@ onMounted(() => {
   margin: 0;
 }
 
-.price-tag {
-  background: #ffe8e0;
-  color: #ff7e5f;
-  padding: 6px 12px;
-  border-radius: 15px;
-  font-size: 14px;
-  font-weight: 600;
-}
-
 .join-stats {
   display: flex;
   gap: 20px;
@@ -1056,57 +1065,6 @@ onMounted(() => {
   border-radius: 15px;
   font-size: 14px;
   font-weight: 500;
-}
-
-/* 位置信息 */
-.location-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.location-details {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-}
-
-.location-icon {
-  font-size: 20px;
-  margin-top: 2px;
-}
-
-.location-text {
-  flex: 1;
-}
-
-.location-name {
-  font-weight: 600;
-  color: #212529;
-  margin-bottom: 4px;
-}
-
-.location-address {
-  color: #6c757d;
-  font-size: 14px;
-}
-
-.map-placeholder {
-  text-align: center;
-  padding: 40px 20px;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 2px dashed #e9ecef;
-}
-
-.map-image {
-  font-size: 48px;
-  margin-bottom: 12px;
-}
-
-.map-placeholder p {
-  margin: 0;
-  color: #6c757d;
 }
 
 /* 加载状态 */

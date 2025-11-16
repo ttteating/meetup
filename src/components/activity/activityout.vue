@@ -159,11 +159,10 @@
         <div class="form-section">
           <div class="form-section-title">
             <i class="icon-recruit"></i>
-            招募信息
+            面向人群
           </div>
           
           <div class="form-group">
-            <label>面向人群</label>
             <div class="options-container">
               <label 
                 v-for="audience in audienceOptions" 

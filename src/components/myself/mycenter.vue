@@ -203,7 +203,6 @@
               >
                 <div class="activity-image">
                   <img :src="activity.image || '/images/default-activity.jpg'" :alt="activity.title">
-                  <span class="activity-status created">我创建的</span>
                   <span v-if="activity.status" class="activity-status" :class="activity.status">
                     {{ getStatusText(activity.status) }}
                   </span>
@@ -230,12 +229,102 @@
 
         <!-- 我的报名选项卡 -->
         <div v-if="activeTab === 'joined'" class="tab-content">
-          <!-- 我的报名内容保持不变 -->
+          <div class="activities-section">
+            <h2 class="section-title">我的报名</h2>
+            <div v-if="loading.joined" class="loading-state">
+              <div class="loading-spinner"></div>
+              <p>加载中...</p>
+            </div>
+            <div v-else-if="joinedActivities.length === 0" class="empty-state">
+              <div class="empty-icon">📋</div>
+              <p>您还没有报名任何活动</p>
+              <router-link to="/activitylist" class="btn-primary">去浏览活动</router-link>
+            </div>
+            <div v-else class="activities-grid">
+              <div 
+                v-for="registration in joinedActivities" 
+                :key="registration.id"
+                class="activity-card"
+              >
+                <div class="activity-image">
+                  <img 
+                    :src="registration.activity?.image || '/images/default-activity.jpg'" 
+                    :alt="registration.activity?.title"
+                  >
+                  <span v-if="registration.status" class="activity-status" :class="registration.status">
+                    {{ getRegistrationStatusText(registration.status) }}
+                  </span>
+                </div>
+                <div class="activity-content">
+                  <h3 class="activity-title">{{ registration.activity?.title }}</h3>
+                  <p class="activity-desc">{{ registration.activity?.description }}</p>
+                  <div class="activity-meta">
+                    <span class="activity-date">📅 {{ formatDate(registration.activity?.start_time) }}</span>
+                    <span class="activity-location">📍 {{ registration.activity?.location || '待定' }}</span>
+                    <span class="activity-participants">👥 {{ registration.activity?.participant_count || 0 }} 人报名</span>
+                  </div>
+                  <div class="activity-actions">
+                    <button class="btn-outline" @click="viewActivityDetails(registration.activity?.id)">查看详情</button>
+                    <button class="btn-danger" @click="cancelJoinActivity(registration.id, registration.activity?.title)">取消报名</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- 历史浏览选项卡 -->
         <div v-if="activeTab === 'history'" class="tab-content">
-          <!-- 历史浏览内容保持不变 -->
+          <div class="activities-section">
+            <div class="section-header">
+              <h2 class="section-title">历史浏览</h2>
+              <div class="section-actions">
+                <button class="btn-outline" @click="loadViewHistory" :disabled="loading.history">刷新</button>
+                <button class="btn-danger" @click="bulkDeleteHistory" :disabled="viewedActivities.length === 0">批量删除</button>
+              </div>
+            </div>
+
+            <div v-if="loading.history" class="loading-state">
+              <div class="loading-spinner"></div>
+              <p>加载历史记录中...</p>
+            </div>
+
+            <div v-else-if="viewedActivities.length === 0" class="empty-state">
+              <div class="empty-icon">🕘</div>
+              <p>暂无浏览记录</p>
+            </div>
+
+            <div v-else class="activities-grid">
+              <div 
+                v-for="record in viewedActivities"
+                :key="record.record_id || record.activity?.id"
+                class="activity-card"
+              >
+                <div class="activity-image">
+                  <label class="history-checkbox-wrap">
+                    <input type="checkbox" class="history-checkbox" :checked="isSelected(record)" @change="toggleSelectHistory(record)">
+                  </label>
+                  <img :src="record.activity?.image || '/images/default-activity.jpg'" :alt="record.activity?.title">
+                  <span v-if="record.activity?.status" class="activity-status" :class="record.activity.status">
+                    {{ getStatusText(record.activity.status) }}
+                  </span>
+                </div>
+                <div class="activity-content">
+                  <h3 class="activity-title">{{ record.activity?.title }}</h3>
+                  <p class="activity-desc">{{ record.activity?.description }}</p>
+                  <div class="activity-meta">
+                    <span class="activity-date">📅 {{ formatDate(record.activity?.start_time) }}</span>
+                    <span class="activity-location">📍 {{ record.activity?.location || '待定' }}</span>
+                    <span class="activity-participants">👥 {{ record.activity?.participant_count || 0 }} 人报名</span>
+                  </div>
+                  <div class="activity-actions">
+                    <button class="btn-outline" @click="viewActivityDetails(record.activity?.id)">查看详情</button>
+                    <button class="btn-danger" @click="deleteHistoryRecord(record)">删除</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
@@ -246,7 +335,7 @@
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { userStore } from '@/stores/userstore'
-import { userAPI, activityAPI, API_BASE_URL } from '@/services/api'
+import { userAPI, activityAPI, userLogsAPI, API_BASE_URL } from '@/services/api'
 
 const router = useRouter()
 const route = useRoute()
@@ -261,7 +350,8 @@ const loading = reactive({
   favorites: false,
   history: false,
   favoriteOperation: false,
-  deleteOperation: false
+  deleteOperation: false,
+  cancelJoinOperation: {} // 记录每个注册ID的取消状态
 })
 
 // 选项卡配置 - 添加我创建的活动
@@ -309,19 +399,21 @@ const userInitials = computed(() => {
 // 表单验证规则（主要针对电话号码、邮箱以及用户名）
 const validationRules = {
   phone: (value) => {
-    if (!value) return '手机号不能为空'
-    if (!/^1[3-9]\d{9}$/.test(value)) return '请输入正确的手机号格式'
+    // 手机号可以为空（可选字段）或符合格式
+    if (value && !/^1[3-9]\d{9}$/.test(value)) return '请输入正确的手机号格式'
     return ''
   },
   email: (value) => {
-    if (!value) return '邮箱不能为空'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '请输入正确的邮箱格式'
+    // 邮箱可以为空（可选字段）或符合格式
+    if (value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return '请输入正确的邮箱格式'
     return ''
   },
   username: (value) => {
+    // 用户名通常不能为空，但也可以为可选
+    // 支持中文、英文、数字、下划线等
     if (!value) return '用户名不能为空'
-    if (value.length < 2) return '用户名至少2个字符'
-    if (value.length > 20) return '用户名不能超过20个字符'
+    if (value.trim().length < 2) return '用户名至少2个字符'
+    if (value.trim().length > 50) return '用户名不能超过50个字符'
     return ''
   }
 }
@@ -347,44 +439,37 @@ const validateForm = () => {
   return !Object.values(fieldErrors).some(error => error !== '')
 }
 
-// 加载用户信息
+// 加载用户信息（加载当前登录用户的信息）
 const loadUserInfo = async () => {
   try {
-    const id = route.params.id
-    if (!id) {
-      console.warn('没有用户ID，无法加载用户信息')
-      return
-    }
-
-    // 获取用户数据（优先从store获取，否则从API获取）
+    // 在 mycenter 页面中，我们加载的是当前登录用户信息
+    // 而不是根据 route.params.id 加载
+    
+    // 优先从 Pinia store 获取已经加载的用户信息
     let userData = null
-    if (userStore.userInfo && userStore.userInfo.id == id) {
+    if (userStore.userInfo && Object.keys(userStore.userInfo).length > 0) {
       userData = userStore.userInfo
+      console.log('从 store 获取用户信息:', userData)
     } else {
-      const result = await userAPI.getUserById(id)
+      // 如果 store 中没有，从 API 获取当前用户信息
+      const result = await userAPI.getCurrentUser()
       if (!result.success) {
         console.error('获取用户信息失败:', result.message)
-        alert('获取用户信息失败')
+        alert('获取用户信息失败，请重新登录')
         router.push('/auth')
         return
       }
       userData = result.data
+      console.log('从 API 获取用户信息:', userData)
     }
 
-    // 重置表单数据
+    // 提取基本信息（顶层字段）
     formData.username = userData.username || ''
     formData.email = userData.email || ''
     formData.phone = userData.phone || ''
 
-
-    // 处理 profile_attributes
-    const profileData = userData.profile_attributes
-      ? (typeof userData.profile_attributes === 'string' 
-          ? JSON.parse(userData.profile_attributes) 
-          : userData.profile_attributes)
-      : {}
-
-    // 更新 profile_attributes
+    // 提取 profile_attributes（后端返回的是嵌套结构）
+    const profileData = userData.profile_attributes || {}
     formData.profile_attributes = {
       college: profileData.college || '',
       major: profileData.major || '',
@@ -418,6 +503,8 @@ const loadUserInfo = async () => {
         formData.profile_attributes.grade = gradeText
       }
     }
+
+    console.log('用户信息已加载:', formData)
   } catch (error) {
     console.error('加载用户信息错误:', error)
     alert('加载用户信息失败，请检查网络连接')
@@ -445,11 +532,13 @@ const loadCreatedActivities = async () => {
         items = []
       }
       
-      // 规范化活动数据：从 cover_image 映射到 image 字段，用于模板显示
+      // 规范化活动数据：从 cover_image 映射到 image 字段，并把 current_participants 映射为 participant_count，供模板显示
       createdActivities.value = items.map(item => ({
         ...item,
         // 将后端的 cover_image 映射为模板所用的 image 字段
-        image: item.cover_image || item.image || ''
+        image: item.cover_image || item.image || '',
+        // 后端返回 current_participants，模板使用 participant_count 字段显示
+        participant_count: item.current_participants ?? item.participant_count ?? 0
       }))
       
       // 异步为每个活动解析和检测真实的封面 URL
@@ -478,12 +567,41 @@ const viewActivityManagement = (activityId) => {
 const loadJoinedActivities = async () => {
   loading.joined = true
   try {
-    const result = await activityAPI.getJoinedActivities()
+    const result = await activityAPI.getJoinedActivities(1, 10)
     if (result.success) {
-      joinedActivities.value = result.data
+      // 后端返回的数据结构: { total, page, page_size, items: [...] }
+      let items = []
+      if (result.data && Array.isArray(result.data.items)) {
+        items = result.data.items
+      } else if (Array.isArray(result.data)) {
+        items = result.data
+      } else {
+        console.error('报名数据格式不符:', result.data)
+        items = []
+      }
+      
+      // 规范化报名数据，映射活动封面图片字段
+      joinedActivities.value = items.map(registration => ({
+        ...registration,
+        // 确保 activity 对象中有完整的图片字段，并映射报名人数字段
+        activity: registration.activity ? {
+          ...registration.activity,
+          image: registration.activity.cover_image || registration.activity.image || '',
+          participant_count: registration.activity.current_participants ?? registration.activity.participant_count ?? 0
+        } : null
+      }))
+      
+      // 异步预加载活动图片
+      joinedActivities.value.forEach(registration => {
+        if (registration.activity) {
+          resolveCoverImageIfNeeded(registration.activity)
+        }
+      })
+      
+      console.log('成功加载报名活动:', joinedActivities.value)
     } else {
       console.error('获取报名活动失败:', result.message)
-      alert('获取报名活动失败')
+      alert('获取报名活动失败：' + (result.message || '请稍后重试'))
     }
   } catch (error) {
     console.error('加载报名活动错误:', error)
@@ -497,18 +615,126 @@ const loadJoinedActivities = async () => {
 const loadViewHistory = async () => {
   loading.history = true
   try {
-    const result = await activityAPI.getViewHistory()
-    if (result.success) {
-      viewedActivities.value = result.data
+    const result = await userLogsAPI.getUserViewHistory(1, 100, '-created_at')
+    
+    if (result.success && result.data) {
+      let items = result.data.items || []
+      if (!Array.isArray(items)) {
+        items = Array.isArray(result.data) ? result.data : []
+      }
+
+      // 直接处理返回的项，后端已包含完整的 activity 对象
+      viewedActivities.value = items.map(log => {
+        if (!log.activity) return null
+        
+        const activity = log.activity
+        return {
+          record_id: log.id,
+          activity: {
+            ...activity,
+            image: activity.cover_image || activity.image || '/images/default-activity.jpg',
+            participant_count: activity.current_participants ?? activity.participant_count ?? 0
+          },
+          viewed_at: log.created_at
+        }
+      }).filter(Boolean)
+
+      // 预加载图片
+      viewedActivities.value.forEach(r => {
+        if (r.activity) resolveCoverImageIfNeeded(r.activity)
+      })
     } else {
-      console.error('获取浏览历史失败:', result.message)
-      alert('获取浏览历史失败')
+      console.error('获取浏览历史失败:', result?.message)
+      viewedActivities.value = []
     }
   } catch (error) {
     console.error('加载浏览历史错误:', error)
-    alert('加载浏览历史失败，请检查网络连接')
+    viewedActivities.value = []
   } finally {
     loading.history = false
+  }
+}
+
+// 选择/删除历史记录支持
+const selectedHistory = ref(new Set())
+
+const isSelected = (record) => {
+  const id = record.record_id ?? record.activity?.id
+  return selectedHistory.value.has(id)
+}
+
+const toggleSelectHistory = (record) => {
+  const id = record.record_id ?? record.activity?.id
+  if (!id) return
+  if (selectedHistory.value.has(id)) {
+    selectedHistory.value.delete(id)
+  } else {
+    selectedHistory.value.add(id)
+  }
+  // 触发响应
+  selectedHistory.value = new Set(selectedHistory.value)
+}
+
+const deleteHistoryRecord = async (record) => {
+  if (!record || !record.record_id) return
+  if (!confirm('确定要删除该浏览记录吗？')) return
+  try {
+    const res = await userLogsAPI.deleteUserLog(record.record_id)
+    if (res.success) {
+      // 从本地数组移除
+      viewedActivities.value = viewedActivities.value.filter(r => r.record_id !== record.record_id)
+      // 同步清理选择
+      selectedHistory.value.delete(record.record_id)
+      selectedHistory.value = new Set(selectedHistory.value)
+      alert('删除成功')
+    } else {
+      alert('删除失败：' + res.message)
+    }
+  } catch (e) {
+    console.error('删除历史记录错误:', e)
+    alert('删除失败，请稍后重试')
+  }
+}
+
+// 批量删除：若已选择项则删除所选，否则清空全部历史
+const bulkDeleteHistory = async () => {
+  if (selectedHistory.value.size > 0) {
+    if (!confirm(`确定删除 ${selectedHistory.value.size} 条选中记录吗？`)) return
+    const ids = Array.from(selectedHistory.value)
+    // 使用批量删除 API
+    try {
+      const logIds = ids.join(',')
+      const res = await userLogsAPI.deleteUserLogsBatch(logIds)
+      if (res.success) {
+        // 从本地数组移除已删除的记录
+        const deletedIdSet = new Set(ids)
+        viewedActivities.value = viewedActivities.value.filter(r => !deletedIdSet.has(r.record_id))
+        selectedHistory.value = new Set()
+        alert('已删除选中记录')
+      } else {
+        alert('删除失败：' + res.message)
+      }
+    } catch (e) {
+      console.error('批量删除历史记录错误:', e)
+      alert('删除失败，请稍后重试')
+    }
+  } else {
+    if (!confirm('确定清空所有浏览历史吗？')) return
+    try {
+      // 清空所有浏览记录
+      const allIds = viewedActivities.value.map(r => r.record_id).join(',')
+      const res = await userLogsAPI.deleteUserLogsBatch(allIds)
+      if (res.success) {
+        viewedActivities.value = []
+        selectedHistory.value = new Set()
+        alert('已清空历史记录')
+      } else {
+        alert('清空失败：' + res.message)
+      }
+    } catch (e) {
+      console.error('清空历史错误:', e)
+      alert('清空失败，请稍后重试')
+    }
   }
 }
 
@@ -548,12 +774,24 @@ const toggleEditMode = () => {
   isEditing.value = !isEditing.value
 }
 
-// 修改 saveUserInfo 函数，正确构建提交数据
+// 修改 saveUserInfo 函数，正确构建提交数据（参照 activitymanager 的最佳实践）
 const saveUserInfo = async () => {
-  if (isSaving.value) return
+  console.log('🔍 [saveUserInfo] 开始保存用户信息...')
+  console.log('🔍 [saveUserInfo] isSaving.value:', isSaving.value)
+  
+  if (isSaving.value) {
+    console.log('❌ [saveUserInfo] 正在保存中，返回')
+    return
+  }
   
   // 验证表单
-  if (!validateForm()) {
+  console.log('🔍 [saveUserInfo] 开始验证表单...')
+  const isValid = validateForm()
+  console.log('🔍 [saveUserInfo] 表单验证结果:', isValid)
+  console.log('🔍 [saveUserInfo] 字段错误:', fieldErrors)
+  
+  if (!isValid) {
+    console.log('❌ [saveUserInfo] 表单验证失败')
     alert('请修正表单中的错误')
     return
   }
@@ -565,8 +803,19 @@ const saveUserInfo = async () => {
     if (typeof hobbies === 'string') {
       hobbies = hobbies.split(',').map(h => h.trim()).filter(Boolean)
     }
+    console.log('🔍 [saveUserInfo] 处理后的 hobbies:', hobbies)
 
-    // 构造要提交的数据
+    // 如果年级是"大一"等格式，转换为"202X级"格式后再提交
+    let grade = formData.profile_attributes.grade || ''
+    if (grade && !grade.includes('级')) {
+      // 是"大一"等格式，需要转换
+      const originalGrade = grade
+      grade = convertGradeToYear(grade)
+      console.log(`🔍 [saveUserInfo] 转换年级: "${originalGrade}" -> "${grade}"`)
+    }
+
+    // 构造要提交的数据 - 完全按照后端接口要求的结构
+    // 参照图1的接口定义和 activitymanager 的更新逻辑
     const submitData = {
       username: formData.username || '',
       email: formData.email || '',
@@ -574,26 +823,58 @@ const saveUserInfo = async () => {
       profile_attributes: {
         college: formData.profile_attributes.college || '',
         major: formData.profile_attributes.major || '',
-        grade: formData.profile_attributes.grade || '',
+        grade: grade,
         gender: formData.profile_attributes.gender || '',
         hobby: Array.isArray(hobbies) ? hobbies : []
       }
     }
 
+    console.log('📤 [saveUserInfo] 准备提交的数据:', JSON.stringify(submitData, null, 2))
+    
+    // 调用 API 更新用户信息
+    console.log('📡 [saveUserInfo] 调用 userAPI.updateUser()...')
     const result = await userAPI.updateUser(submitData)
+    
+    console.log('📥 [saveUserInfo] 后端响应:', result)
+    
     if (result.success) {
-      // 更新本地存储的用户信息
-      userStore.userInfo = { ...result.data }
+      console.log('✅ [saveUserInfo] 更新成功！')
+      
+      // 后端返回更新后的完整用户数据
+      const updatedUserData = result.data || {}
+      
+      // 更新 Pinia store 中的用户信息
+      userStore.userInfo = { ...updatedUserData }
+      console.log('✅ [saveUserInfo] 已更新 Pinia store')
+      
+      // 同步更新本地表单数据（确认后端已正确保存）
+      formData.username = updatedUserData.username || ''
+      formData.email = updatedUserData.email || ''
+      formData.phone = updatedUserData.phone || ''
+      
+      const profileData = updatedUserData.profile_attributes || {}
+      formData.profile_attributes = {
+        college: profileData.college || '',
+        major: profileData.major || '',
+        hobby: Array.isArray(profileData.hobby) ? profileData.hobby : [],
+        gender: profileData.gender || '',
+        grade: profileData.grade || ''
+      }
+      
+      // 退出编辑模式
       isEditing.value = false
+      console.log('✅ [saveUserInfo] 用户信息更新成功:', updatedUserData)
       alert('个人信息更新成功！')
     } else {
-      alert(`更新失败: ${result.message}`)
+      console.error('❌ [saveUserInfo] 更新失败:', result.message)
+      alert(`更新失败: ${result.message || '请稍后重试'}`)
     }
   } catch (error) {
-    console.error('保存用户信息错误:', error)
+    console.error('❌ [saveUserInfo] 保存用户信息错误:', error)
     alert('保存失败，请稍后重试')
   } finally {
     isSaving.value = false
+    console.log('🔍 [saveUserInfo] 完成')
   }
 }
 
@@ -683,6 +964,45 @@ const cancelJoin = async (activityId) => {
   }
 }
 
+// 取消活动报名（根据报名ID）
+const cancelJoinActivity = async (registrationId, activityTitle) => {
+  if (confirm(`确定要取消报名"${activityTitle}"吗？`)) {
+    // 防止重复点击
+    if (loading.cancelJoinOperation[registrationId]) {
+      return
+    }
+    
+    loading.cancelJoinOperation[registrationId] = true
+    try {
+      console.log('开始取消报名，报名ID:', registrationId)
+      const result = await activityAPI.cancelJoin(registrationId)
+      
+      if (result.success) {
+        // 从本地列表中移除
+        const initialLength = joinedActivities.value.length
+        joinedActivities.value = joinedActivities.value.filter(
+          registration => registration.id !== registrationId
+        )
+        
+        if (joinedActivities.value.length < initialLength) {
+          console.log('成功取消报名，已从列表中移除')
+          alert('已取消报名')
+        } else {
+          console.warn('未能从列表中找到该报名记录')
+        }
+      } else {
+        console.error('取消报名失败:', result.message)
+        alert(`取消报名失败: ${result.message || '请稍后重试'}`)
+      }
+    } catch (error) {
+      console.error('取消报名错误:', error)
+      alert('取消报名失败，请稍后重试')
+    } finally {
+      loading.cancelJoinOperation[registrationId] = false
+    }
+  }
+}
+
 // 报名活动
 const joinActivity = async (activityId) => {
   try {
@@ -699,13 +1019,13 @@ const joinActivity = async (activityId) => {
 }
 
 
-// 从历史记录中移除
-const removeFromHistory = async (activityId) => {
+// 从历史记录中移除（根据日志记录 ID）
+const removeFromHistory = async (logId) => {
   try {
-    const result = await activityAPI.removeFromHistory(activityId)
+    const result = await userLogsAPI.deleteUserLog(logId)
     if (result.success) {
       viewedActivities.value = viewedActivities.value.filter(
-        activity => activity.id !== activityId
+        activity => activity.record_id !== logId
       )
       alert('已从历史记录中移除')
     } else {
@@ -721,7 +1041,8 @@ const removeFromHistory = async (activityId) => {
 const clearHistory = async () => {
   if (confirm('确定要清空所有历史记录吗？')) {
     try {
-      const result = await activityAPI.clearViewHistory()
+      const allIds = viewedActivities.value.map(r => r.record_id).join(',')
+      const result = await userLogsAPI.deleteUserLogsBatch(allIds)
       if (result.success) {
         viewedActivities.value = []
         alert('历史记录已清空')
@@ -762,6 +1083,17 @@ const getStatusText = (status) => {
     'ongoing': '进行中',
     'completed': '已结束',
     'cancelled': '已取消'
+  }
+  return statusMap[status] || status
+}
+
+// 获取报名状态文本
+const getRegistrationStatusText = (status) => {
+  const statusMap = {
+    'pending': '待审核',
+    'approved': '已通过',
+    'rejected': '已拒绝',
+    'cancelled': '已取消',
   }
   return statusMap[status] || status
 }
@@ -849,7 +1181,7 @@ const parseHobbies = (hobbies) => {
 }
 
 //组件挂载完成后执行
-onMounted(() => {
+onMounted(async () => {
   // 检查登录状态
   if (!userStore.isLoggedIn) {
     alert('请先登录')
@@ -857,9 +1189,15 @@ onMounted(() => {
     return
   }
   
-  // 加载用户信息和初始选项卡数据
+  // 加载用户信息和所有初始数据
   loadUserInfo()
-  loadCreatedActivities() // 默认加载我创建的活动
+  
+  // 并行加载所有数据列表，确保顶部统计信息正确显示
+  await Promise.all([
+    loadCreatedActivities(),
+    loadJoinedActivities(),
+    loadViewHistory()
+  ])
 })
 </script>
 

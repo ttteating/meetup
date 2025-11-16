@@ -6,11 +6,12 @@ import activitylview from '@/views/activitylview.vue'
 import activitydview from '@/views/activitydview.vue'
 import mycenter from '@/views/mycenterview.vue'
 import activitymanager from '@/components/myself/activitymanager.vue'
+import recommendationlist from '@/components/recommendation/recommendationlist.vue'
 
 const routes = [
   {
     path: '/',
-    redirect: '/activitylist'
+    redirect: '/recommendations'
   },
   {
     path: '/auth',
@@ -26,6 +27,11 @@ const routes = [
     path: '/activity',
     name: 'Activity',
     component: activityoview
+  },
+  {
+    path: '/recommendations',
+    name: 'Recommendations',
+    component: recommendationlist
   },
   {
     path: '/activitylist',
