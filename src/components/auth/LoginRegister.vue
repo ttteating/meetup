@@ -272,7 +272,8 @@ const handleLogin = async () => {
       }
       userStore.setUser(response.data.user)
       alert('登录成功！')
-      router.push('/')
+      // 跳转到推荐首页（而不是根路径，避免被重定向回登录页）
+      router.push('/recommendations')
     } else {
       alert(response.message || '登录失败')
     }

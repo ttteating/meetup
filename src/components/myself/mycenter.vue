@@ -72,40 +72,49 @@
       </div>
     </div>
     <div class="card-body">
+      <!-- 备注说明 -->
+      <div class="form-notice">
+        <p>💡 提示：用户名、电话、邮箱无法修改</p>
+      </div>
+      
       <div class="form-grid">
+        <!-- 用户名 - 受限字段（只读，不可修改） -->
         <div class="form-group">
           <label class="form-label">用户名</label>
           <input
             v-model="formData.username"
             type="text"
-            class="form-input"
-            :class="{ 'form-input-editing': isEditing }"
-            :readonly="!isEditing"
+            class="form-input form-input-restricted"
+            readonly
+            disabled
           />
-          <div v-if="fieldErrors.username" class="error-message">{{ fieldErrors.username }}</div>
         </div>
+        
+        <!-- 手机号 - 受限字段（只读，不可修改） -->
         <div class="form-group">
           <label class="form-label">手机号</label>
           <input
             v-model="formData.phone"
             type="tel"
-            class="form-input"
-            :class="{ 'form-input-editing': isEditing }"
-            :readonly="!isEditing"
+            class="form-input form-input-restricted"
+            readonly
+            disabled
           />
-          <div v-if="fieldErrors.phone" class="error-message">{{ fieldErrors.phone }}</div>
         </div>
+        
+        <!-- 邮箱 - 受限字段（只读，不可修改） -->
         <div class="form-group">
           <label class="form-label">邮箱</label>
           <input
             v-model="formData.email"
             type="email"
-            class="form-input"
-            :class="{ 'form-input-editing': isEditing }"
-            :readonly="!isEditing"
+            class="form-input form-input-restricted"
+            readonly
+            disabled
           />
-          <div v-if="fieldErrors.email" class="error-message">{{ fieldErrors.email }}</div>
         </div>
+        
+        <!-- 性别 - 可修改字段 -->
         <div class="form-group">
           <label class="form-label">性别</label>
           <select
@@ -368,6 +377,8 @@ const formData = reactive({
   phone: '',
   email: '',
   username: '',
+  nickname: null,  // 用户昵称（可选）
+  bio: null,       // 用户简介（可选）
   // profile_attributes中的扩展信息
   profile_attributes: {
     college: '',
@@ -467,6 +478,8 @@ const loadUserInfo = async () => {
     formData.username = userData.username || ''
     formData.email = userData.email || ''
     formData.phone = userData.phone || ''
+    formData.nickname = userData.nickname || null
+    formData.bio = userData.bio || null
 
     // 提取 profile_attributes（后端返回的是嵌套结构）
     const profileData = userData.profile_attributes || {}
@@ -761,6 +774,38 @@ const switchTab = (tabId) => {
   }
 }
 
+// 受限字段列表 - 后端不支持修改
+const restrictedFields = {
+  username: '用户名',
+  email: '邮箱',
+  phone: '手机号'
+}
+
+// 可修改的字段列表 - 后端允许修改
+const allowedFields = {
+  'profile_attributes.hobby': '兴趣爱好',
+  'profile_attributes.gender': '性别',
+  'profile_attributes.major': '专业',
+  'profile_attributes.college': '学院'
+}
+
+// 检查用户是否修改了受限字段
+const checkRestrictedFieldChanges = (originalData) => {
+  const changedRestrictedFields = []
+  
+  // 检查每个受限字段
+  for (const [fieldName, fieldLabel] of Object.entries(restrictedFields)) {
+    const originalValue = originalData[fieldName] || ''
+    const currentValue = formData[fieldName] || ''
+    
+    if (String(originalValue) !== String(currentValue)) {
+      changedRestrictedFields.push(fieldLabel)
+    }
+  }
+  
+  return changedRestrictedFields
+}
+
 // 切换编辑模式
 const toggleEditMode = () => {
   if (isEditing.value) {
@@ -783,6 +828,18 @@ const saveUserInfo = async () => {
     console.log('❌ [saveUserInfo] 正在保存中，返回')
     return
   }
+  
+  // ========== 新增：检查是否修改了受限字段 ==========
+  // 获取原始数据（从 Pinia store）
+  const originalData = userStore.userInfo || {}
+  const restrictedChanges = checkRestrictedFieldChanges(originalData)
+  
+  if (restrictedChanges.length > 0) {
+    console.warn('⚠️ [saveUserInfo] 检测到修改受限字段:', restrictedChanges)
+    alert(`❌ 无法修改这些字段：${restrictedChanges.join('、')}\n\n✅ 您只能修改以下信息：\n• 兴趣爱好\n• 性别\n• 专业\n• 学院`)
+    return
+  }
+  // ========== 检查结束 ==========
   
   // 验证表单
   console.log('🔍 [saveUserInfo] 开始验证表单...')
@@ -814,12 +871,14 @@ const saveUserInfo = async () => {
       console.log(`🔍 [saveUserInfo] 转换年级: "${originalGrade}" -> "${grade}"`)
     }
 
-    // 构造要提交的数据 - 完全按照后端接口要求的结构
-    // 参照图1的接口定义和 activitymanager 的更新逻辑
+    // 构造要提交的数据 - 完全按照后端接口要求的结构（包含所有期望的字段）
+    // 后端期望：{ username, email, phone, nickname?, bio?, profile_attributes: {...} }
     const submitData = {
       username: formData.username || '',
       email: formData.email || '',
       phone: formData.phone || '',
+      nickname: formData.nickname || null,      // 可选字段，保持与后端响应一致
+      bio: formData.bio || null,                  // 可选字段，保持与后端响应一致
       profile_attributes: {
         college: formData.profile_attributes.college || '',
         major: formData.profile_attributes.major || '',
@@ -839,7 +898,25 @@ const saveUserInfo = async () => {
     
     if (result.success) {
       console.log('✅ [saveUserInfo] 更新成功！')
-      
+
+      // === 临时验证：PATCH 成功后立即 GET 当前用户，确认后端是否已保存 ===
+      try {
+        console.log('🔁 [saveUserInfo] PATCH 返回 success，正在调用 getCurrentUser() 验证保存结果...')
+        const fresh = await userAPI.getCurrentUser()
+        console.log('🔁 [saveUserInfo] getCurrentUser() 响应:', fresh)
+        if (fresh.success && fresh.data) {
+          const serverPhone = fresh.data.phone || ''
+          const submittedPhone = submitData.phone || ''
+          if (serverPhone !== submittedPhone) {
+            console.warn('[saveUserInfo] 后端返回的 phone 与提交值不一致', { submitted: submittedPhone, server: serverPhone })
+            alert('注意：后端未保存您提交的电话号码，请检查控制台 network/response 与后端日志')
+          }
+        }
+      } catch (e) {
+        console.error('[saveUserInfo] 验证 getCurrentUser 失败:', e)
+      }
+      // === 验证结束 ===
+
       // 后端返回更新后的完整用户数据
       const updatedUserData = result.data || {}
       
@@ -1529,6 +1606,68 @@ onMounted(async () => {
   color: #dc3545;
   font-size: 0.875rem;
   margin-top: 0.25rem;
+}
+
+/* 表单备注提示 */
+.form-notice {
+  background: #e7f3ff;
+  border-left: 4px solid #2196f3;
+  padding: 0.75rem 1rem;
+  border-radius: 4px;
+  margin-bottom: 1.5rem;
+}
+
+.form-notice p {
+  margin: 0;
+  color: #1976d2;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+/* 受限字段样式 - 显示为灰色，表示不可修改 */
+.form-input-restricted {
+  background: #f0f0f0 !important;
+  color: #999;
+  cursor: not-allowed;
+  border-color: #ddd !important;
+}
+
+.form-input-restricted:hover,
+.form-input-restricted:focus {
+  background: #f0f0f0 !important;
+  border-color: #ddd !important;
+  box-shadow: none !important;
+}
+
+/* 字段标签徽章 */
+.field-restricted-badge {
+  display: inline-block;
+  background: #f8d7da;
+  color: #721c24;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+.field-allowed-badge {
+  display: inline-block;
+  background: #d4edda;
+  color: #155724;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+/* 字段提示文本 */
+.field-hint {
+  color: #999;
+  font-size: 0.8rem;
+  margin-top: 0.25rem;
+  font-style: italic;
 }
 
 /* 活动部分 */
