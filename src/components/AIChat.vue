@@ -7,12 +7,19 @@
     <transition name="slide-up">
       <div class="ai-chat-panel" v-if="open">
         <div class="ai-chat-header">
-          <div>在线客服 · 扣子AI</div>
+          <div>觅活meethub ·在线客服</div>
           <button class="close-btn" @click="toggleOpen">✕</button>
         </div>
 
         <div class="ai-chat-body">
-          <div v-if="messages.length === 0" class="empty">您好！有什么可以帮您的吗？</div>
+          <!--开场白-->
+          <div v-if="messages.length === 0" class="empty">嗨！欢迎登陆觅活（MeetHub），你的活动探索新基地！🎉
+
+ 看来你也是个热爱生活、不甘平淡的“行动派”！无论是想解锁小众兴趣、拓展优质圈子，还是让好点子找到响应者，我随时待命！
+
+ 今天想从哪里开始你的冒险？
+ 
+ 是让我为你推荐活动，还是聊聊你想打造的活动呢？</div>
           <div class="messages">
             <div v-for="(m, i) in messages" :key="i" :class="['msg', m.role]">
               <div class="bubble">{{ m.text }}</div>
@@ -55,10 +62,11 @@ async function onSend() {
   loading.value = true
 
   try {
-    // call backend AI endpoint
+    // 调用扣子AI客服接口
     const res = await aiAPI.chat(text)
     if (res && res.success) {
-      const reply = (res.data && (res.data.reply || res.data.text)) || '抱歉，未收到回复'
+      // 关键字段: ai_response 是后端返回的AI回复
+      const reply = (res.data && res.data.ai_response) || '抱歉，未收到回复'
       messages.value.push({ role: 'bot', text: reply })
     } else {
       messages.value.push({ role: 'bot', text: res && res.message ? res.message : '服务暂时不可用' })

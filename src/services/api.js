@@ -22,25 +22,15 @@ async function request(endpoint, options = {}) {
       config.headers['Authorization'] = `Bearer ${token}`
     }
   } catch (e) {
-    // ignore localStorage errors in non-browser env
+  
   }
 
   if (config.body && typeof config.body === 'object') {
-    config.body = JSON.stringify(config.body)
+    config.body = JSON.stringify(config.body)//将body对象转换为JSON字符串
   }
 
   try {
-    // 调试：显示是否设置了 Authorization 头（不打印完整 token）
-    try {
-      if (config.headers && config.headers.Authorization) {
-        console.debug('[api] Authorization header set')
-      } else {
-        console.debug('[api] No Authorization header')
-      }
-    } catch (e) {
-      // ignore console errors
-    }
-
+    
     const response = await fetch(url, config)
     // 尝试解析 JSON（有些错误响应也是 JSON）
     let data
@@ -50,7 +40,7 @@ async function request(endpoint, options = {}) {
       data = null
     }
 
-    // 如果是 401（未授权），统一处理：清理 token 并返回友好信息，便于前端引导登录
+    // 如果是 401（未授权），清除本地 token 并返回特定错误信息
     if (response.status === 401) {
       try { localStorage.removeItem('token') } catch(e) {}
       const errMsg = data && (data.detail || data.message) ? (Array.isArray(data.detail) ? data.detail.join('; ') : (data.detail || data.message)) : '令牌验证失败'
@@ -200,14 +190,6 @@ export const authAPI = {
     })
   },
   
-  // 忘记密码
-  async forgotPassword(email) {
-    return request('/api/auth/forgot-password', {
-      method: 'POST',
-      body: { email }
-    })
-  },
-
 //验证身份
   async verifyIdentity(data) {
     return request('/auth/reset-password/verify', {
@@ -240,7 +222,7 @@ async uploadCover(activityId, file) {
   // 创建 FormData 对象
   const formData = new FormData()
   
-  // 添加 activity_id 字段
+  // 添加 activity_id 字段（后端静态资源库需要活动id进行命名）
   formData.append('activity_id', activityId)
   
   // 添加文件字段
@@ -251,16 +233,9 @@ async uploadCover(activityId, file) {
   // 否则去掉 skipAuth 让其自动带上本地 token
   return requestWithFile('/uploads/images/activities/cover', formData, {
     method: 'POST',
-    // skipAuth: true
   })
 },
 
-  // 删除已上传的文件（根据上传ID）
-  async deleteUpload(uploadId) {
-    return request(`/api/uploads/cover/${uploadId}`, {
-      method: 'DELETE'
-    })
-  },
 
   // 获取活动列表
   async getActivities() {
@@ -358,7 +333,7 @@ async uploadCover(activityId, file) {
 
   // 获取特定活动的所有报名信息（管理员/组织者使用）
   async getActivityRegistrations(activityId, page = 1, pageSize = 10, status = '') {
-    const queryParams = new URLSearchParams()
+    const queryParams = new URLSearchParams()//自动处理特殊字符的URL编码
     queryParams.append('page', page)
     queryParams.append('page_size', pageSize)
     if (status) {
@@ -387,14 +362,13 @@ async uploadCover(activityId, file) {
     if (filters.categories && filters.categories.length > 0) {
       queryParams.append('categories', filters.categories.join(','))
     }
-    // timeRange 是单个字符串值（this_week|two_weeks|one_month），不是数组
     if (filters.timeRange) {
       queryParams.append('time_range', filters.timeRange)
     }
     if (filters.sortBy) {
       queryParams.append('sort_by', filters.sortBy)
     }
-    // 默认只请求已发布的活动，除非显式传入其他 status
+
     if (filters.status) {
       queryParams.append('status', filters.status)
     } else {
@@ -427,46 +401,16 @@ async uploadCover(activityId, file) {
     return { success: true, data: { joined }, status: res.status }
   },
 
-  // 增加活动浏览量
-async incrementActivityViews(activityId) {
-  return request(`/api/activities/${activityId}/view`, {
-    method: 'POST'
-  })
-},
 
-
-  // 获取活动参与者列表
-  async getActivityParticipants(activityId) {
-    return request(`/api/activities/${activityId}/participants`, {
-      method: 'GET'
-    })
-  },
-
-  // 获取活动统计数据（包括浏览量等）
-  // 注：使用详情接口，因为 /activities/{id}/ 已包含 views_count 字段
+//获取某活动详情
   async getActivityStats(activityId) {
     return request(`/activities/${activityId}/`, {
       method: 'GET'
     })
   },
 
-  // 检查是否可以修改活动
-    async checkActivityEditable(activityId) {
-      // 后端路由为 /activities/{activity_id}/check-edit（无 /api 前缀）
-      return request(`/activities/${activityId}/check-edit`, {
-        method: 'GET'
-      })
-  },
-
-  // 导出参与者数据
-  async exportParticipants(activityId) {
-    return request(`/api/activities/${activityId}/export-participants`, {
-      method: 'GET'
-    })
-  },
-
-  // 更新活动状态（发布/取消发布等）
-  // 后端接收 status 作为 QUERY 参数：PATCH /activities/{id}/status?status=published
+ 
+  //更新活动状态
   async updateActivityStatus(activityId, status) {
     return request(`/activities/${activityId}/status?status=${status}`, {
       method: 'PATCH'
@@ -517,8 +461,7 @@ async incrementActivityViews(activityId) {
   }
 }
 
-// 以 JSON 更新活动详情（不上传文件）
-// 请求体应当符合后端活动详情规范（title, description, cover_image, location, start_time, end_time, max_participants, tags, target_audience, benefits, ...）
+//修改活动详情
 activityAPI.updateActivityDetails = async function(activity_id, data) {
   return request(`/activities/${activity_id}/`, {
     method: 'PUT',
@@ -526,7 +469,7 @@ activityAPI.updateActivityDetails = async function(activity_id, data) {
   })
 }
 
-// 在api.js中添加用户相关API
+// 用户相关 API
 export const userAPI = {
   // 获取当前用户信息
   async getCurrentUser() {
@@ -552,44 +495,17 @@ export const userAPI = {
   
   // 更新用户信息
   async updateUser(userData) {
-    // 尝试两个可能的端点：/users/me/ 和 /auth/me/
-    // 优先尝试 /users/me/，如果失败则尝试 /auth/me/
     let result = await request('/users/me/', {
       method: 'PATCH',
       body: userData
     })
-    
-    // 如果第一个端点失败且返回 404，尝试备用端点
-    if (!result.success && result.status === 404) {
-      console.log('尝试备用端点 /auth/me/')
-      result = await request('/auth/me/', {
-        method: 'PATCH',
-        body: userData
-      })
-    }
-    
     return result
   },
   
-  // 检查登录状态
-  async checkAuth() {
-    return request('/api/auth/check', {
-      method: 'GET'
-    })
-  },
-  
-  // 退出登录
-  async logout() {
-    return request('/api/auth/logout', {
-      method: 'POST'
-    })
-  }
 }
 
-// 用户操作日志相关 API（管理/审计用途）
+// 用户操作日志相关 API
 export const userLogsAPI = {
-  // 获取用户操作日志（支持按 user_id / activity_id / 时间等筛选）
-  // params: { user_id, activity_id, operation_type, start_time, end_time, sort_by, page, page_size }
   async getUserLogs(params = {}) {
     const query = new URLSearchParams()
     Object.keys(params || {}).forEach(k => {
@@ -602,8 +518,7 @@ export const userLogsAPI = {
     return request(url, { method: 'GET' })
   },
 
-  // 获取当前用户的浏览历史记录
-  // params: { page, page_size, sort_by }
+  // 获取当前用户的浏览历史记录 
   async getUserViewHistory(page = 1, pageSize = 10, sortBy = 'created_at') {
     const query = new URLSearchParams()
     query.append('page', page)
@@ -615,8 +530,6 @@ export const userLogsAPI = {
     return request(`/user-logs/my/history?${qs}`, { method: 'GET' })
   },
 
-  // 批量删除用户操作日志，传入逗号分隔的 log_ids 字符串
-  // 示例: log_ids = '1,2,3'
   async deleteUserLogsBatch(log_ids) {
     const query = new URLSearchParams()
     query.append('log_ids', log_ids)
@@ -634,13 +547,32 @@ export const userLogsAPI = {
   }
 }
 
-// AI 聊天接口（扣子AI 智能体）
+//调用扣子AI智能体
 export const aiAPI = {
-  // 发送一句话给后端 AI 服务，后端应返回 { success: true, data: { reply: '...' } }
-  async chat(message, context = {}) {
-    return request('/api/ai/chat', {
-      method: 'POST',
-      body: { message, context }
-    })
+  // 调用扣子AI 智能体客服
+  async chat(userInput) {
+    try {
+      const userId = localStorage.getItem('user_id')
+      if (!userId) {
+        return {
+          success: false,
+          message: '用户未登录'
+        }
+      }
+      
+      return request('/ai/chat', {
+        method: 'POST',
+        body: {
+          user_id: userId,
+          user_input: userInput
+        }
+      })
+    } catch (error) {
+      console.error('AI chat error:', error)
+      return {
+        success: false,
+        message: error.message || '调用智能体失败'
+      }
+    }
   }
 }

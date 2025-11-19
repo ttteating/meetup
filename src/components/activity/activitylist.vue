@@ -445,9 +445,9 @@ const formatDate = (dateString) => {
 }
 
 const sortByMap = {
-  latest: 'created_at',
-  hot: 'views_count',
-  participants: 'current_participants'
+  latest: '-created_at',
+  hot: '-views_count',
+  participants: '-current_participants'
 }
 
 const handleSearch = () => {
