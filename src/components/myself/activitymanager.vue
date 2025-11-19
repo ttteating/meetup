@@ -9,7 +9,7 @@
         </div>
         <nav class="nav-links">
           <router-link to="/mycenter" class="nav-link">返回个人中心</router-link>
-          <router-link to="/" class="nav-link">返回首页</router-link>
+          <router-link to="/recommendations" class="nav-link">返回首页</router-link>
         </nav>
       </div>
     </header>
@@ -86,14 +86,6 @@
                   <span class="btn-icon">✓</span>
                   批准全部待审核
                 </button>
-                <button 
-                  class="btn-outline" 
-                  @click="exportParticipants"
-                  :disabled="participants.length === 0"
-                >
-                  <span class="btn-icon">📥</span>
-                  导出全部数据
-                </button>
               </div>
             </div>
 
@@ -138,12 +130,6 @@
                     <div v-if="registrationStatuses[status].length > 0" class="status-section">
                       <div class="status-section-header">
                         <h3>{{ getStatusLabel(status) }} ({{ registrationStatuses[status].length }})</h3>
-                        <button 
-                          class="btn-small"
-                          @click="exportParticipantsByStatus(status)"
-                        >
-                          导出
-                        </button>
                       </div>
                       <div class="participants-table">
                         <div class="table-header">
@@ -207,12 +193,6 @@
                   <div class="status-section">
                     <div class="status-section-header">
                       <h3>{{ getStatusLabel(selectedStatusFilter) }} ({{ registrationStatuses[selectedStatusFilter].length }})</h3>
-                      <button 
-                        class="btn-small"
-                        @click="exportParticipantsByStatus(selectedStatusFilter)"
-                      >
-                        导出
-                      </button>
                     </div>
                     <div class="participants-table">
                       <div class="table-header">
@@ -988,41 +968,6 @@ const approveAllPending = async () => {
   }
 }
 
-// 导出分类数据
-const exportParticipantsByStatus = (status) => {
-  const statusParticipants = registrationStatuses[status]
-  if (statusParticipants.length === 0) {
-    alert(`没有${getStatusLabel(status)}的报名者`)
-    return
-  }
-  
-  // 生成 CSV 数据
-  const headers = ['用户名', '邮箱', '电话', '学院', '年级', '报名时间', '状态', '反馈']
-  const rows = statusParticipants.map(p => [
-    p.user?.username || p.username || '匿名',
-    p.user?.email || p.email || '',
-    p.user?.phone || p.phone || '',
-    p.user?.college || p.college || '',
-    getGradeText(p.user?.grade || p.grade || ''),
-    formatDateTime(p.created_at || p.joined_at),
-    getStatusLabel(p.status),
-    p.feedback || ''
-  ])
-  
-  const csvContent = [
-    headers.join(','),
-    ...rows.map(row => row.map(cell => `"${cell}"`).join(','))
-  ].join('\n')
-  
-  // 创建下载链接
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-  const link = document.createElement('a')
-  link.href = URL.createObjectURL(blob)
-  link.download = `报名者数据_${getStatusLabel(status)}_${new Date().toLocaleDateString()}.csv`
-  link.click()
-  URL.revokeObjectURL(link.href)
-}
-
 // 加载活动统计
 const loadActivityStats = async () => {
   loading.stats = true
@@ -1177,28 +1122,7 @@ const cancelEdit = () => {
   })
 }
 
-// 导出参与者数据
-const exportParticipants = async () => {
-  try {
-    const result = await activityAPI.exportParticipants(activityId)
-    if (result.success) {
-      // 创建下载链接
-      const blob = new Blob([result.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `活动报名数据_${activityDetails.value?.title || activityId}.xlsx`
-      link.click()
-      window.URL.revokeObjectURL(url)
-      alert('数据导出成功！')
-    } else {
-      alert(`导出失败: ${result.message}`)
-    }
-  } catch (error) {
-    console.error('导出数据错误:', error)
-    alert('导出失败，请稍后重试')
-  }
-}
+
 
 // 工具函数
 const formatDate = (dateString) => {

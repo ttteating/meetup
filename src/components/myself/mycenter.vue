@@ -8,7 +8,7 @@
           <span class="app-name">觅活</span>
         </div>
         <nav class="nav-links">
-          <router-link to="/" class="nav-link">返回首页</router-link>
+          <router-link to="/recommendations" class="nav-link">返回首页</router-link>
           <button @click="handleLogout" class="logout-btn">退出登录</button>
         </nav>
       </div>
@@ -1241,7 +1241,7 @@ const handleLogout = async () => {
       console.error('退出登录错误:', error)
     } finally {
       userStore.clearUser()
-      router.push('/')
+      router.push('/auth')
     }
   }
 }

@@ -322,7 +322,7 @@ const handleRegister = async () => {
       alert('注册成功！')
       localStorage.setItem('token', response.data.token)
       userStore.setUser(response.data.user)
-      router.push('/')
+      router.push('/recommendations')
     } else {
       alert(response.message || '注册失败')
     }

@@ -138,7 +138,7 @@
                 <div class="organizer-rating">⭐ 4.8 (126次活动)</div>
               </div>
             </div>
-            <button class="contact-btn">联系组织者</button>
+            <button class="contact-btn" @click="showOrganizerModal = true">联系组织者</button>
           </div>
         </div>
 
@@ -233,6 +233,55 @@
       <p>{{ error }}</p>
       <button class="retry-btn" @click="fetchActivityDetail">重试</button>
     </div>
+
+    <!-- 组织者信息弹框 -->
+    <div v-if="showOrganizerModal" class="modal-overlay" @click="showOrganizerModal = false">
+      <div class="modal-container" @click.stop>
+        <div class="modal-header">
+          <h2>组织者信息</h2>
+          <button class="modal-close-btn" @click="showOrganizerModal = false">✕</button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="organizer-info-modal">
+            <div class="avatar-large">
+              {{ getOrganizerInitials(organizerData.username) }}
+            </div>
+            
+            <div class="organizer-detail-info">
+              <div class="info-row">
+                <span class="info-label">用户名：</span>
+                <span class="info-value">{{ organizerData.username }}</span>
+              </div>
+              
+              <div class="info-row" v-if="organizerData.nickname">
+                <span class="info-label">昵称：</span>
+                <span class="info-value">{{ organizerData.nickname }}</span>
+              </div>
+              
+              <div class="info-row">
+                <span class="info-label">邮箱：</span>
+                <span class="info-value email-value">{{ organizerData.email }}</span>
+              </div>
+              
+              <div class="info-row" v-if="organizerData.phone">
+                <span class="info-label">电话：</span>
+                <span class="info-value">{{ organizerData.phone }}</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="contact-actions">
+            <button class="copy-btn" @click="copyEmail">
+              📋 复制邮箱
+            </button>
+            <button class="copy-phone-btn" @click="copyPhone">
+              📱 复制电话
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 </template>
 
 <script setup>
@@ -249,6 +298,16 @@ const activity = ref(null)
 const loading = ref(false)
 const error = ref('')
 const isJoined = ref(false)
+
+// 弹框状态
+const showOrganizerModal = ref(false)
+const organizerData = reactive({
+  username: '',
+  nickname: '',
+  email: '',
+  phone: '',
+  id: null
+})
 
 // 计算属性
 const isFull = computed(() => {
@@ -448,6 +507,15 @@ const fetchActivityDetail = async () => {
       organizer: item.publisher?.username || item.publisher?.nickname || '未知组织者'
     }
 
+    // 保存组织者信息以供弹框使用
+    if (item.publisher) {
+      organizerData.id = item.publisher.id || null
+      organizerData.username = item.publisher.username || ''
+      organizerData.nickname = item.publisher.nickname || ''
+      organizerData.email = item.publisher.email || ''
+      organizerData.phone = item.publisher.phone || ''
+    }
+
     // 设置到 state
     activity.value = activityData
 
@@ -545,6 +613,50 @@ const checkJoinStatus = async () => {
   } catch (err) {
     console.error('检查报名状态失败:', err)
   }
+}
+
+// 复制邮箱到剪贴板
+const copyEmail = () => {
+  const email = organizerData.email
+  if (!email) {
+    alert('组织者未提供邮箱')
+    return
+  }
+  
+  navigator.clipboard.writeText(email).then(() => {
+    alert('邮箱已复制到剪贴板')
+  }).catch(() => {
+    // 降级方案
+    const textarea = document.createElement('textarea')
+    textarea.value = email
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    alert('邮箱已复制到剪贴板')
+  })
+}
+
+// 复制电话到剪贴板
+const copyPhone = () => {
+  const phone = organizerData.phone
+  if (!phone) {
+    alert('组织者未提供电话')
+    return
+  }
+  
+  navigator.clipboard.writeText(phone).then(() => {
+    alert('电话已复制到剪贴板')
+  }).catch(() => {
+    // 降级方案
+    const textarea = document.createElement('textarea')
+    textarea.value = phone
+    document.body.appendChild(textarea)
+    textarea.select()
+    document.execCommand('copy')
+    document.body.removeChild(textarea)
+    alert('电话已复制到剪贴板')
+  })
 }
 
 // 生命周期 - 页面加载时自动获取活动详情
@@ -1126,6 +1238,182 @@ onMounted(() => {
 
 .retry-btn:hover {
   background: #ff6b4a;
+}
+
+/* 弹框样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  animation: fadeIn 0.3s ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.modal-container {
+  background: white;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 500px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-in-out;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.modal-header {
+  background: linear-gradient(135deg, #ff7e5f 0%, #ff6b4a 100%);
+  color: white;
+  padding: 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 28px;
+  cursor: pointer;
+  padding: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s;
+}
+
+.modal-close-btn:hover {
+  transform: scale(1.1);
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.organizer-info-modal {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.avatar-large {
+  width: 80px;
+  height: 80px;
+  background: linear-gradient(135deg, #ff7e5f 0%, #ff6b4a 100%);
+  color: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.organizer-detail-info {
+  width: 100%;
+}
+
+.info-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.info-row:last-child {
+  border-bottom: none;
+}
+
+.info-label {
+  font-weight: 600;
+  color: #495057;
+  min-width: 80px;
+}
+
+.info-value {
+  color: #212529;
+  word-break: break-all;
+  flex: 1;
+  margin-left: 12px;
+}
+
+.info-value.email-value {
+  color: #ff7e5f;
+  font-weight: 500;
+}
+
+.contact-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.copy-btn,
+.copy-phone-btn {
+  flex: 1;
+  padding: 12px 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.3s;
+  font-size: 14px;
+}
+
+.copy-btn {
+  background: #e9ecef;
+  color: #495057;
+}
+
+.copy-btn:hover {
+  background: #dee2e6;
+  transform: translateY(-2px);
+}
+
+.copy-phone-btn {
+  background: #ff7e5f;
+  color: white;
+}
+
+.copy-phone-btn:hover {
+  background: #ff6b4a;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 126, 95, 0.3);
 }
 
 /* 响应式设计 */
