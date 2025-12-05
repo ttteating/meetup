@@ -129,7 +129,7 @@
             <option value="other">其他</option>
           </select>
         </div>
- <!-- 替换原有的兴趣爱好表单项 -->
+
 <div class="form-group">
   <label class="form-label">兴趣爱好</label>
   <input
@@ -377,9 +377,8 @@ const formData = reactive({
   phone: '',
   email: '',
   username: '',
-  nickname: null,  // 用户昵称（可选）
-  bio: null,       // 用户简介（可选）
-  // profile_attributes中的扩展信息
+  nickname: null,  // 用户昵称（不用）
+  bio: null,       // 用户简介（不用）
   profile_attributes: {
     college: '',
     major: '',
@@ -450,13 +449,9 @@ const validateForm = () => {
   return !Object.values(fieldErrors).some(error => error !== '')
 }
 
-// 加载用户信息（加载当前登录用户的信息）
+// 加载用户信息
 const loadUserInfo = async () => {
   try {
-    // 在 mycenter 页面中，我们加载的是当前登录用户信息
-    // 而不是根据 route.params.id 加载
-    
-    // 优先从 Pinia store 获取已经加载的用户信息
     let userData = null
     if (userStore.userInfo && Object.keys(userStore.userInfo).length > 0) {
       userData = userStore.userInfo
@@ -474,7 +469,7 @@ const loadUserInfo = async () => {
       console.log('从 API 获取用户信息:', userData)
     }
 
-    // 提取基本信息（顶层字段）
+    // 提取基本信息
     formData.username = userData.username || ''
     formData.email = userData.email || ''
     formData.phone = userData.phone || ''
@@ -534,7 +529,6 @@ const loadCreatedActivities = async () => {
     // 调用 getMyActivities 时传递分页参数（默认第1页，每页10条）
     const result = await activityAPI.getMyActivities(1, 10)
     if (result.success) {
-      // 后端返回结构可能是 { items: [...], total: number } 或直接是数组
       let items = []
       if (result.data && Array.isArray(result.data.items)) {
         items = result.data.items
@@ -636,7 +630,6 @@ const loadViewHistory = async () => {
         items = Array.isArray(result.data) ? result.data : []
       }
 
-      // 直接处理返回的项，后端已包含完整的 activity 对象
       viewedActivities.value = items.map(log => {
         if (!log.activity) return null
         
@@ -668,14 +661,15 @@ const loadViewHistory = async () => {
   }
 }
 
-// 选择/删除历史记录支持
+// 选择/删除历史记录支持（仅限前端）
 const selectedHistory = ref(new Set())
 
+//判断指定记录是否被选中
 const isSelected = (record) => {
   const id = record.record_id ?? record.activity?.id
   return selectedHistory.value.has(id)
 }
-
+//切换选中状态
 const toggleSelectHistory = (record) => {
   const id = record.record_id ?? record.activity?.id
   if (!id) return
@@ -714,10 +708,9 @@ const bulkDeleteHistory = async () => {
   if (selectedHistory.value.size > 0) {
     if (!confirm(`确定删除 ${selectedHistory.value.size} 条选中记录吗？`)) return
     const ids = Array.from(selectedHistory.value)
-    // 使用批量删除 API
     try {
       const logIds = ids.join(',')
-      const res = await userLogsAPI.deleteUserLogsBatch(logIds)
+      const res = await userLogsAPI.deleteUserLogsBatch(logIds)//已删除功能，只能做到前端使用
       if (res.success) {
         // 从本地数组移除已删除的记录
         const deletedIdSet = new Set(ids)
@@ -829,18 +822,8 @@ const saveUserInfo = async () => {
     return
   }
   
-  // ========== 新增：检查是否修改了受限字段 ==========
-  // 获取原始数据（从 Pinia store）
-  const originalData = userStore.userInfo || {}
-  const restrictedChanges = checkRestrictedFieldChanges(originalData)
   
-  if (restrictedChanges.length > 0) {
-    console.warn('⚠️ [saveUserInfo] 检测到修改受限字段:', restrictedChanges)
-    alert(`❌ 无法修改这些字段：${restrictedChanges.join('、')}\n\n✅ 您只能修改以下信息：\n• 兴趣爱好\n• 性别\n• 专业\n• 学院`)
-    return
-  }
-  // ========== 检查结束 ==========
-  
+  //前端控制台调试
   // 验证表单
   console.log('🔍 [saveUserInfo] 开始验证表单...')
   const isValid = validateForm()
@@ -871,8 +854,7 @@ const saveUserInfo = async () => {
       console.log(`🔍 [saveUserInfo] 转换年级: "${originalGrade}" -> "${grade}"`)
     }
 
-    // 构造要提交的数据 - 完全按照后端接口要求的结构（包含所有期望的字段）
-    // 后端期望：{ username, email, phone, nickname?, bio?, profile_attributes: {...} }
+    // 提交的数据
     const submitData = {
       username: formData.username || '',
       email: formData.email || '',
@@ -887,7 +869,7 @@ const saveUserInfo = async () => {
         hobby: Array.isArray(hobbies) ? hobbies : []
       }
     }
-
+   //测试部分
     console.log('📤 [saveUserInfo] 准备提交的数据:', JSON.stringify(submitData, null, 2))
     
     // 调用 API 更新用户信息
@@ -915,8 +897,6 @@ const saveUserInfo = async () => {
       } catch (e) {
         console.error('[saveUserInfo] 验证 getCurrentUser 失败:', e)
       }
-      // === 验证结束 ===
-
       // 后端返回更新后的完整用户数据
       const updatedUserData = result.data || {}
       
@@ -1051,28 +1031,40 @@ const cancelJoinActivity = async (registrationId, activityTitle) => {
     
     loading.cancelJoinOperation[registrationId] = true
     try {
-      console.log('开始取消报名，报名ID:', registrationId)
+      console.log('🔍 [cancelJoinActivity] 开始取消报名，报名ID:', registrationId)
       const result = await activityAPI.cancelJoin(registrationId)
       
       if (result.success) {
         // 从本地列表中移除
         const initialLength = joinedActivities.value.length
+        const removedRegistration = joinedActivities.value.find(r => r.id === registrationId)
+        const activityId = removedRegistration?.activity?.id || removedRegistration?.activity_id
+        
         joinedActivities.value = joinedActivities.value.filter(
           registration => registration.id !== registrationId
         )
         
         if (joinedActivities.value.length < initialLength) {
-          console.log('成功取消报名，已从列表中移除')
+          console.log('✅ [cancelJoinActivity] 成功取消报名，已从列表中移除')
+          
+          // 发送全局事件，通知其他页面（如 activitydetails.vue）更新状态
+          if (activityId) {
+            console.log(`📢 [cancelJoinActivity] 发送事件通知：活动 ${activityId} 的报名已取消`)
+            window.dispatchEvent(new CustomEvent('registration-cancelled', {
+              detail: { activityId, registrationId }
+            }))
+          }
+          
           alert('已取消报名')
         } else {
-          console.warn('未能从列表中找到该报名记录')
+          console.warn('⚠️ [cancelJoinActivity] 未能从列表中找到该报名记录')
         }
       } else {
-        console.error('取消报名失败:', result.message)
+        console.error('❌ [cancelJoinActivity] 取消报名失败:', result.message)
         alert(`取消报名失败: ${result.message || '请稍后重试'}`)
       }
     } catch (error) {
-      console.error('取消报名错误:', error)
+      console.error('❌ [cancelJoinActivity] 取消报名错误:', error)
       alert('取消报名失败，请稍后重试')
     } finally {
       loading.cancelJoinOperation[registrationId] = false
@@ -1175,7 +1167,6 @@ const getRegistrationStatusText = (status) => {
   return statusMap[status] || status
 }
 
-// --- 图片解析与探测逻辑（与 activitylist.vue 一致）---
 const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
 
 // 根据活动ID生成候选图片URL列表
@@ -1207,7 +1198,6 @@ const checkImage = (url) => {
   })
 }
 
-// 尝试多种候选URL，找到第一个可访问的图片并更新 activity.image
 const resolveCoverImageIfNeeded = async (item) => {
   // 如果已经是完整可用的 HTTP URL，则不做探测
   if (!item) return

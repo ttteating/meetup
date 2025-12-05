@@ -1,6 +1,6 @@
 <template>
   <div class="recommendation-card" @click="goToDetails">
-    <!-- 左侧：活动封面图（大尺寸） -->
+    <!-- 左侧活动封面图 -->
     <div class="card-image">
       <img 
         :src="activity.cover_image || '/placeholder-cover.jpg'"
@@ -19,7 +19,7 @@
         <p class="activity-description">{{ truncateDescription(activity.description) }}</p>
       </div>
 
-      <!-- 中部：关键信息 -->
+      <!-- 中部：活动信息 -->
       <div class="content-info">
         <!-- 招募人数 -->
         <div class="info-row">
@@ -70,7 +70,7 @@ const props = defineProps({
   }
 })
 
-// 截断描述文本（最多显示100个字符）
+//最多显示100个字（美观）
 const truncateDescription = (text) => {
   if (!text) return '暂无介绍'
   return text.length > 100 ? text.substring(0, 100) + '...' : text
@@ -131,23 +131,23 @@ const getTargetAudience = computed(() => {
 const extractValue = (data) => {
   if (!data) return ''
   
-  // 如果是字符串
+  //如果是字符串
   if (typeof data === 'string') {
-    // 尝试解析 JSON
+    //尝试解析 JSON
     try {
       const parsed = JSON.parse(data)
       if (Array.isArray(parsed)) {
         return parsed[0] || ''
       } else if (typeof parsed === 'object') {
         const values = Object.values(parsed)
-        // 如果值本身是数组，取第一个元素
+        //如果值本身是数组，取第一个元素
         if (Array.isArray(values[0])) {
           return values[0][0] || ''
         }
         return values[0] || ''
       }
     } catch (e) {
-      // 不是 JSON 格式，继续处理
+      //不是 JSON 格式，继续处理
     }
     
     // 处理 "key": ["value"] 或 "key": "value" 格式
@@ -182,7 +182,7 @@ const extractValue = (data) => {
 const goToDetails = () => {
   const activityId = props.activity.id
   
-  // 验证 ID 是否有效（避免 ID 为 0 或 undefined）
+  //验证 ID 是否有效
   if (!activityId && activityId !== 0) {
     console.error('活动 ID 无效:', props.activity)
     alert('无法获取活动ID，请刷新重试')

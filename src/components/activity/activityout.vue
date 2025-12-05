@@ -258,10 +258,6 @@
           </button>
         </div>
 
-        <!--考虑要不要留-->
-        <div class="form-footer">
-          发布活动即表示您同意我们的<a href="#">服务条款</a>和<a href="#">隐私政策</a>
-        </div>
       </form>
     </div>
   </div>
@@ -290,12 +286,12 @@ const formatDateTimeForInput = (dateStr) => {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-// 表单数据 - 根据后端 ActivityBase 模型调整
+// 表单数据 
 const formData = reactive({
   title: '',
   description: '',
   location: '华南农业大学',  // 默认值
-  start_time: '',  // 对应 activity_time
+  start_time: '', 
   end_time: '',
   max_participants: 100,  // 默认值
   tags: [],  // 活动标签
@@ -307,7 +303,7 @@ const formData = reactive({
   benefits: {
     benefit: []  // 活动收益
   },
-  organizer: '',  // 额外字段：组织者
+  organizer: '', 
   cover_image: null,  // 本地预览用
   coverFile: null  // 实际文件对象
 })
@@ -336,13 +332,13 @@ const categoryOptions = ref([
   { value: '校园生活', label: '校园生活' }
 ])
 
-// 状态
-const submitting = ref(false)
-const fileInput = ref(null)
+
+const submitting = ref(false)//控制表单提交状况
+const fileInput = ref(null)//获取输入框的DOM对象
 const coverFile = ref(null) // 存储实际文件对象
 
 
-// 处理面向人群选择
+// 处理面向人群选择（实现目标人群键的切换功能）
 const handleAudienceChange = (value) => {
   const index = formData.target_audience.Targeted_people.indexOf(value)
   if (index === -1) {
@@ -390,7 +386,7 @@ const handleCoverUpload = async (event) => {
 
 // 移除封面图
 const removeCover = () => {
-  // 如果已经上传到服务器，尝试删除服务端文件
+  // 如果已经上传到服务器，尝试删除服务端文件（目前废除）
   const uploadedId = formData.cover_image_id
   if (uploadedId) {
     activityAPI.deleteUpload(uploadedId).catch(err => {
@@ -398,15 +394,13 @@ const removeCover = () => {
     })
   }
 
-  // 如果是本地 blob URL，撤销引用
   try {
     if (formData.cover_image && typeof formData.cover_image === 'string' && formData.cover_image.startsWith('blob:')) {
       URL.revokeObjectURL(formData.cover_image)
     }
   } catch (e) {
-    // ignore
   }
-
+//将表单的封面相关字段清空
   formData.cover_image = null
   formData.cover_image_id = null
   coverFile.value = null
@@ -455,6 +449,16 @@ const setDefaultTime = () => {
   formData.end_time = `${endYear}-${endMonth}-${endDay}T${endHours}:${endMinutes}`
 }
 
+// 草稿验证
+const validateDraft = () => {
+  const errors = []
+  // 草稿保存不需要填完所有字段，只需要至少有标题
+  if (!formData.title || !formData.title.trim()) {
+    errors.push('活动名称不能为空')
+  }
+  return errors
+}
+
 // 保存草稿 - 调用后端创建活动，并设置状态为 draft
 const saveDraft = async () => {
   // 确保已登录
@@ -465,10 +469,10 @@ const saveDraft = async () => {
     return
   }
   
-  // 表单验证
-  const errors = validateForm()
+  // 草稿验证 - 只需要验证最基本的字段
+  const errors = validateDraft()
   if (errors.length > 0) {
-    alert('请完善以下信息后保存草稿：\n' + errors.join('\n'))
+    alert(errors.join('\n'))
     return
   }
 
@@ -476,7 +480,7 @@ const saveDraft = async () => {
 
   try {
     // 准备活动数据
-    const activityData = prepareFormData()
+    const activityData = prepareFormData(true) // 草稿模式
     activityData.organizer = formData.organizer || activityData.organizer
     if (formData.benefits_details) activityData.benefits_details = formData.benefits_details
 
@@ -542,7 +546,7 @@ const saveDraft = async () => {
   }
 }
 
-// 表单验证
+// 表单验证（真正发布时用）
 const validateForm = () => {
   const errors = []
   
@@ -587,42 +591,43 @@ const validateForm = () => {
   return errors
 }
 
-// 准备表单数据用于提交
-const prepareFormData = () => {
-  // 根据后端 ActivityBase 模型构造数据
+// 准备表单数据用于提交（支持完整表单和部分填写的草稿）
+const prepareFormData = (isDraft = false) => {
+
   const toIso = (val) => {
     if (!val) return null
     try {
-      // If it's already an ISO-like string that ends with Z or includes seconds, Date will handle it.
       const d = new Date(val)
       if (isNaN(d.getTime())) return null
-      return d.toISOString()
+      return d.toISOString()//将日期值转换为ISO字符串
     } catch (e) {
       return null
     }
   }
 
+  //需要提交的数据
   const submitData = {
-    title: formData.title.trim(),
-    description: formData.description.trim(),
-    location: formData.location.trim(),
+    title: formData.title && formData.title.trim() ? formData.title.trim() : '',
+    description: formData.description && formData.description.trim() ? formData.description.trim() : '',
+    location: formData.location && formData.location.trim() ? formData.location.trim() : '',
     cover_image: formData.cover_image || '',
     start_time: toIso(formData.start_time),
     end_time: toIso(formData.end_time),
-    max_participants: parseInt(formData.max_participants) || 100,
+    max_participants: formData.max_participants ? parseInt(formData.max_participants) : 0,
     tags: formData.tags || [],
     target_audience: {
-      Targeted_people: formData.target_audience.Targeted_people,
-      Activity_class: formData.category ? [formData.category] : ['校园生活']
+      Targeted_people: formData.target_audience && Array.isArray(formData.target_audience.Targeted_people) ? formData.target_audience.Targeted_people : [],
+      Activity_class: formData.category ? [formData.category] : []
     },
     benefits: {
-      benefit: formData.benefits.benefit || []
+      benefit: formData.benefits && Array.isArray(formData.benefits.benefit) ? formData.benefits.benefit : []
     }
   }
   
   return submitData
 }
 
+//上传图片重要逻辑：后端需要先有了活动的id（也就是说先要有创建的活动，才可以进行封面的上传）
 const submitForm = async () => {
   // 确保已登录
   const token = localStorage.getItem('token')
@@ -642,8 +647,8 @@ const submitForm = async () => {
   submitting.value = true
 
   try {
-    // 先创建活动（使用 JSON 格式）
-    const activityData = prepareFormData()
+    // 先创建活动
+    const activityData = prepareFormData(false)
     // 补充额外字段（如果有）
     activityData.organizer = formData.organizer || activityData.organizer
     if (formData.benefits_details) activityData.benefits_details = formData.benefits_details

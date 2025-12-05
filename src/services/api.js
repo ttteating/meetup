@@ -5,20 +5,22 @@ async function request(endpoint, options = {}) {
   const url = `${API_BASE_URL}${endpoint}`
   
   const config = {
+    method: options.method || 'GET',
     headers: {
       'Content-Type': 'application/json',
       ...options.headers,
     },
-    ...options,
   }
+
+  // 复制其他 options，但排除已处理的字段
+  const { headers, skipAuth, ...otherOptions } = options
+  Object.assign(config, otherOptions)
 
   // 如果本地存有 token，则自动注入 Authorization 头
   try {
     // 支持通过 options.skipAuth 来跳过自动注入 Authorization（默认注入）
-    const skipAuth = options.skipAuth === true
     const token = localStorage.getItem('token')
     if (!skipAuth && token) {
-      config.headers = config.headers || {}
       config.headers['Authorization'] = `Bearer ${token}`
     }
   } catch (e) {
@@ -314,9 +316,20 @@ async uploadCover(activityId, file) {
 
   // 取消报名（根据报名ID进行删除）
   async cancelJoin(registrationId) {
-    return request(`/registrations/${registrationId}/cancel/`, {
-      method: 'POST'
-    })
+    console.log(`[activityAPI.cancelJoin] 开始取消报名，registrationId: ${registrationId}`)
+    try {
+      const result = await request(`/registrations/${registrationId}/cancel/`, {
+        method: 'POST'
+      })
+      console.log(`[activityAPI.cancelJoin] 响应:`, result)
+      return result
+    } catch (error) {
+      console.error(`[activityAPI.cancelJoin] 请求异常:`, error)
+      return {
+        success: false,
+        message: error.message || '取消报名请求失败'
+      }
+    }
   },
 
   // 获取我发布的活动
@@ -356,11 +369,13 @@ async uploadCover(activityId, file) {
     if (filters.benefits && filters.benefits.length > 0) {
       queryParams.append('benefits', filters.benefits.join(','))
     }
+    // 后端期望的参数名为 'targeted_people'，值为逗号分隔的中文标签
     if (filters.audience && filters.audience.length > 0) {
-      queryParams.append('audience', filters.audience.join(','))
+      queryParams.append('targeted_people', filters.audience.join(','))
     }
+    // 后端期望的参数名为 'activity_class'，值为逗号分隔的中文标签
     if (filters.categories && filters.categories.length > 0) {
-      queryParams.append('categories', filters.categories.join(','))
+      queryParams.append('activity_class', filters.categories.join(','))
     }
     if (filters.timeRange) {
       queryParams.append('time_range', filters.timeRange)
@@ -391,13 +406,16 @@ async uploadCover(activityId, file) {
   },
 
   //检查用户是否已报名活动
-  async checkJoinStatus(activityId) {
-    const res = await request(`/registrations/my/`, {
+  async checkJoinStatus(activityId, forceRefresh = true) {
+    // 添加时间戳参数破坏缓存，确保每次都获取最新数据
+    const timestamp = forceRefresh ? `&_t=${Date.now()}` : ''
+    const res = await request(`/registrations/my/?${timestamp}`, {
       method: 'GET'
     })
     if (!res.success) return res
     const list = Array.isArray(res.data?.items) ? res.data.items : (Array.isArray(res.data) ? res.data : [])
     const joined = list.some(r => String(r.activity_id ?? r.activity?.id) === String(activityId))
+    console.log(`[checkJoinStatus] activityId: ${activityId}, joined: ${joined}, list count: ${list.length}`)
     return { success: true, data: { joined }, status: res.status }
   },
 

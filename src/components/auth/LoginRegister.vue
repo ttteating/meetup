@@ -314,7 +314,7 @@ const handleRegister = async () => {
         major: registerForm.profile_attributes.major,
         hobby: registerForm.profile_attributes.hobby,
         gender: registerForm.profile_attributes.gender,
-        grade: convertedGrade  // 现在 convertedGrade 已正确定义
+        grade: convertedGrade 
       }
     })
     

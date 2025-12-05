@@ -36,7 +36,7 @@
         <p>正在加载推荐活动...</p>
       </div>
 
-      <!-- 空状态 -->
+      <!-- 空状态（不存在推荐时-->
       <div v-else-if="activities.length === 0" class="empty-state">
         <div class="empty-icon">📭</div>
         <h3 v-if="!isLoggedIn">请登录查看推荐活动</h3>
@@ -128,11 +128,6 @@ const totalPages = computed(() => 1)
 const loadRecommendations = async () => {
   loading.value = true
   try {
-    // API请求规范：
-    // - count: 推荐数量
-    // - exclude_viewed: 排除已浏览的活动
-    // - exclude_registered: 排除已报名的活动
-    // - exclude_ended: 排除已结束的活动
     const res = await activityAPI.getRecommendedActivities(recommendCount.value, {
       exclude_viewed: true,
       exclude_registered: true,
@@ -145,7 +140,7 @@ const loadRecommendations = async () => {
       let activityList = []
       
       if (res.data && Array.isArray(res.data.recommendations)) {
-        // 标准格式：recommendations 数组，每个元素包含 activity 对象
+        //recommendations 数组，每个元素包含 activity 对象
         activityList = res.data.recommendations.map(item => {
           const activity = item.activity || item
           return {
@@ -185,7 +180,7 @@ const nextActivity = () => {
   
   // 检查是否到达最后一个活动
   if (currentIndex.value === activities.value.length - 1) {
-    // 到达最后一个，自动加载新的推荐
+    // 到达最后一个，自动加载新的推荐（一批5个）
     loadMoreRecommendations()
   } else {
     // 继续切换到下一个

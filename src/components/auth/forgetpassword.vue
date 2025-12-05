@@ -151,7 +151,7 @@ const errors = reactive({
 // 验证手机号格式
 function validatePhone(phone) {
   const phoneRegex = /^1[3-9]\d{9}$/
-  return phoneRegex.test(phone)
+  return phoneRegex.test(phone)//使用电话号码的正则表达式进行验证输入的文本格式
 }
 
 // 验证邮箱格式
@@ -165,7 +165,7 @@ function validatePassword(password) {
   return password.length >= 6
 }
 
-// 隐藏错误消息
+// 隐藏错误消息（将之前输入框中显示的错误信息进行清除）
 function hideError(field) {
   errors[field] = ''
 }

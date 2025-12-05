@@ -290,26 +290,26 @@ import { useRoute, useRouter } from 'vue-router'
 import { activityAPI, API_BASE_URL as API_BASE_URL_IMPORT } from '@/services/api'
 import { userStore } from '@/stores/userstore'
 
+//路由信息和路由器示例获取（获取页面导航和参数）
 const route = useRoute()
 const router = useRouter()
 
-// 活动数据
-const activity = ref(null)
-const loading = ref(false)
-const error = ref('')
-const isJoined = ref(false)
+const activity = ref(null)///存储活动数据
+const loading = ref(false)//控制加载状态
+const error = ref('')//存储错误信息
+const isJoined = ref(false)//标识用户是否已参加活动
 
-// 弹框状态
+// 弹框状态（用于控制组织者的弹框显示状态，点击“联系组织者"时use)
 const showOrganizerModal = ref(false)
 const organizerData = reactive({
   username: '',
-  nickname: '',
+  nickname: '',//后端多给的字段，不管
   email: '',
   phone: '',
   id: null
 })
 
-// 计算属性
+//判断参与人数是否超出限制
 const isFull = computed(() => {
   if (!activity.value) return false
   return activity.value.current_participants >= activity.value.max_participants
@@ -319,12 +319,12 @@ const isJoinable = computed(() => {
   const a = activity.value
   if (!a) return false
   
-  // 检查活动状态是否为已发布
+// 检查活动状态是否为已发布
   if (a.status !== 'published') {
     return false
   }
   
-  // 检查是否超过活动开始时间
+// 检查是否超过活动开始时间
   const now = Date.now()
   const startTs = a.activity_time ? new Date(a.activity_time).getTime() : null
   if (startTs === null || isNaN(startTs)) return true
@@ -332,20 +332,20 @@ const isJoinable = computed(() => {
 })
 
 // 登录状态与用户信息展示
-const isLoggedIn = computed(() => userStore.isLoggedIn)
-const displayName = computed(() => {
+const isLoggedIn = computed(() => userStore.isLoggedIn)//检验用户是否已登录
+const displayName = computed(() => {//获取用户显示名称
   const u = userStore.userInfo || {}
   const nick = (u.nickname || '').trim()
   const uname = (u.username || '').trim()
   const normalize = (v) => (v && v.toLowerCase() !== 'string' ? v : '')
   return normalize(nick) || normalize(uname) || '个人中心'
 })
-const userCenter = computed(() => {
+const userCenter = computed(() => {//获取用户个人中心链接（根据用户ID构建路由）
   const id = (userStore.userInfo && (userStore.userInfo.id || userStore.userInfo.user_id)) || localStorage.getItem('user_id')
   return id ? `/user/${id}` : '/mycenter'
 })
 
-// 选项数据（与创建活动页面保持一致）
+// 选项数据
 const benefitsOptions = [
   { value: '综测加分', label: '综测加分' },
   { value: '志愿时', label: '志愿时' },
@@ -370,7 +370,7 @@ const categoryOptions = [
   { value: 'campus', label: '校园生活' }
 ]
 
-// 方法
+// 获取分类标签
 const getCategoryLabel = (categoryValue) => {
   const category = categoryOptions.find(cat => cat.value === categoryValue)
   return category ? category.label : categoryValue
@@ -407,6 +407,7 @@ const formatDateTime = (dateString) => {
   })
 }
 
+//计算活动参与率百分比（废弃功能）
 const getParticipationRate = () => {
   if (!activity.value || !activity.value.max_participants) return 0
   const current = activity.value.current_participants || 0
@@ -421,6 +422,7 @@ const goToCreate = () => {
   router.push('/activity')
 }
 
+//检查是否可以报名（获取报名状态）
 const handleJoin = async () => {
   if (isJoined.value || !isJoinable.value) {
     alert('当前活动状态不可报名')
@@ -465,6 +467,7 @@ const handleJoin = async () => {
   }
 }
 
+//发起请求获取活动详情
 const fetchActivityDetail = async () => {
   loading.value = true
   error.value = ''
@@ -542,12 +545,11 @@ const checkImage = (url) => {
     img.onerror = () => resolve(false)
     // 添加缓存破坏参数以避免过期的 404 响应缓存
     img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
-    // 安全超时
     setTimeout(() => resolve(false), 3000)
   })
 }
 
-// 图片扩展名列表
+// 图片扩展名列表（保证图片兼容）
 const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
 
 // 根据活动ID生成候选静态图片URL列表
@@ -556,7 +558,6 @@ const getStaticCandidates = (item) => {
   const candidates = []
 
   if (id !== undefined && id !== null) {
-    // 使用后端的静态路径 TopActivities，尝试多种扩展名
     imageExtensions.forEach(ext => {
       candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.${ext}`)
     })
@@ -567,6 +568,7 @@ const getStaticCandidates = (item) => {
 
 // 解析活动详情页的封面图片
 // 优先尝试使用 cover_image URL，失败后回退到静态资源库
+//后端支持两种图片存储方式：完整网页url，另外一种采用静态资源存储
 const resolveCoverForDetail = async (item) => {
   if (!item) return
   const cur = item.cover_image || ''
@@ -626,7 +628,7 @@ const copyEmail = () => {
   navigator.clipboard.writeText(email).then(() => {
     alert('邮箱已复制到剪贴板')
   }).catch(() => {
-    // 降级方案
+    // 降级方案（如果navigator.clipboard不可用）
     const textarea = document.createElement('textarea')
     textarea.value = email
     document.body.appendChild(textarea)
@@ -648,7 +650,7 @@ const copyPhone = () => {
   navigator.clipboard.writeText(phone).then(() => {
     alert('电话已复制到剪贴板')
   }).catch(() => {
-    // 降级方案
+    //another way
     const textarea = document.createElement('textarea')
     textarea.value = phone
     document.body.appendChild(textarea)

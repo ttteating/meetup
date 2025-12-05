@@ -13,6 +13,18 @@
             <router-link to="/recommendations" class="nav-menu-item">首页</router-link>
             <router-link to="/activitylist" class="nav-menu-item active">分类</router-link>
           </div>
+          
+          <!-- 搜索栏 -->
+          <div class="nav-search">
+            <input 
+              v-model="searchKeyword" 
+              @keyup.enter="handleSearch"
+              type="text" 
+              placeholder="搜索活动..."
+              class="search-input"
+            >
+            <button @click="handleSearch" class="search-btn">🔍</button>
+          </div>
         </div>
         
         <div class="nav-right">
@@ -118,7 +130,7 @@
     <!-- 排序和结果统计 -->
     <div class="results-header">
       <div class="results-count">
-        找到 {{ filteredActivities.length }} 个活动
+        找到 {{ totalCount }} 个活动
       </div>
       <div class="sort-options">
         <select v-model="sortBy" @change="applySorting" class="sort-select">
@@ -175,14 +187,14 @@
               </span>
             </div>
 
-            <div class="card-footer">
+          <div class="card-footer">
               <div class="participants">
                 👥 {{ activity.current_participants || 0 }}/{{ activity.max_participants }}
               </div>
               <button 
                 class="join-btn"
                 @click.stop="joinActivity(activity.id)"
-                :disabled="activity.joined"
+                :disabled="isActivityJoinDisabled(activity)"
               >
                 {{ activity.joined ? '已报名' : '立即报名' }}
               </button>
@@ -210,7 +222,7 @@
         <button 
           class="page-btn" 
           :disabled="currentPage === 1"
-          @click="currentPage--"
+          @click="goToPrevPage"
         >
           上一页
         </button>
@@ -222,7 +234,7 @@
         <button 
           class="page-btn" 
           :disabled="currentPage === totalPages"
-          @click="currentPage++"
+          @click="goToNextPage"
         >
           下一页
         </button>
@@ -257,7 +269,7 @@ const goToCreate = () => {
   router.push('/activity')
 }
 
-// 添加退出登录方法
+//退出登录，点击即可跳转回登录界面
 const handleLogout = () => {
   userStore.clearUser()
   router.push('/auth')
@@ -278,6 +290,7 @@ const loading = ref(false)
 const currentPage = ref(1)
 const pageSize = 12
 const sortBy = ref('latest')//双向响应
+let searchTimer = null // 防抖定时器
 
 // 筛选条件
 const filters = reactive({
@@ -287,7 +300,7 @@ const filters = reactive({
   timeRange: []
 })
 
-// 计算属性
+//计算属性（返回条件过滤后的列表）
 const filteredActivities = computed(() => activities.value)
 
 // 选项数据
@@ -321,26 +334,25 @@ const timeOptions = [
   { value: 'one_month', label: '一个月内' }
 ]
 
-// 活动数据
-const activities = ref([])//双向同步
 
-// 1. 删除本地筛选的 filteredActivities computed 属性
-// 2. 修改 totalPages 计算方式：
-const totalCount = ref(0) // 新增总数引用
+const activities = ref([])//数据双向绑定，获取后端存储的活动数据
+
+
+const totalCount = ref(0) // 存储总活动数
+//计算总页数
 const totalPages = computed(() => {
   return Math.ceil(totalCount.value / pageSize)
 })
 
-// 3. 简化 paginatedActivities:
 const paginatedActivities = computed(() => {
   return activities.value // 直接使用后端返回的分页数据
 })
 
-// 4. 更新 fetchActivities 方法：
+
 const fetchActivities = async () => {
   loading.value = true
   try {
-      // 将前端的筛选值映射为后端期望的值（后端使用中文标签）
+      // 将前端的筛选值映射为后端期望的参数
       const audienceMap = { freshman: '大一', sophomore: '大二', junior: '大三', senior: '大四', graduate: '研究生', all: 'all' }
       const categoryMap = { academic: '学术调研', career: '就业创业', arts: '文体艺术', volunteer: '志愿服务', social: '社会实践', campus: '校园生活' }
 
@@ -349,7 +361,6 @@ const fetchActivities = async () => {
         benefits: filters.benefits && filters.benefits.length ? filters.benefits : undefined,
         audience: filters.audience && filters.audience.length ? filters.audience.map(a => audienceMap[a] || a) : undefined,
         categories: filters.categories && filters.categories.length ? filters.categories.map(c => categoryMap[c] || c) : undefined,
-        // timeRange 后端只接受单个值（this_week|two_weeks|one_month），不是数组
         // 如果前端选中多个时间范围，只取第一个；如果没有选中，则不传此参数
         timeRange: filters.timeRange && filters.timeRange.length ? filters.timeRange[0] : undefined,
         page: currentPage.value,
@@ -357,34 +368,32 @@ const fetchActivities = async () => {
         sortBy: sortByMap[sortBy.value] || 'created_at' // 默认按创建时间
       }
 
-      // 调试：打印实际发送的参数
-      console.log('[fetchActivities] 发送参数:', params)
-
       const result = await activityAPI.getActivitiesWithFilters(params)
-      console.log('[fetchActivities] 返回结果:', result)
+      console.log('[fetchActivities] 返回结果:', result)//仅用于前端调试
       
       if (result.success) {
-        // 后端返回结构 { total, items: [...] }
         const items = result.data.items || []
         // 规范化每个活动的字段以适应前端显示逻辑
         activities.value = items.map(item => ({
           ...item,
-          // 兼容不同字段命名：activity_time 使用 start_time
           activity_time: item.start_time || item.activity_time,
-          // category 从 target_audience.Activity_class 取第一个值（如果存在）或使用 item.category
+          //检查target_audience是否存在并且检查Activity_class数组长度是否大于0,满足条件取数组第一个元素，否则取item.target_audience
           category: (item.target_audience && Array.isArray(item.target_audience.Activity_class) && item.target_audience.Activity_class.length > 0)
                     ? item.target_audience.Activity_class[0]
                     : (item.category || ''),
-          // benefits 展平为数组
           benefits: Array.isArray(item.benefits?.benefit) ? item.benefits.benefit : (Array.isArray(item.benefits) ? item.benefits : []),
-          // organizer 可从 publisher.nickname / username 推断
           organizer: (item.publisher && (item.publisher.username || item.publisher.nickname)) || item.organizer || '',
-          // 初始 cover_image 先使用返回值或占位，之后会尝试检测可用的静态 URL
-          cover_image: item.cover_image || item.cover_image_url || ''
+          cover_image: item.cover_image || item.cover_image_url || '',
+          joined: item.joined || false // 初始化报名状态，默认为 false
         }))
         // 异步检测并解析每个活动的封面真实 URL（如果需要）
         activities.value.forEach(a => resolveCoverImageIfNeeded(a))
         totalCount.value = result.data.total || 0
+        
+        // 如果用户已登录，异步检测每个活动的报名状态
+        if (isLoggedIn.value) {
+          await checkJoinStatusForAllActivities()
+        }
       } else {
         activities.value = []
         totalCount.value = 0
@@ -398,19 +407,26 @@ const fetchActivities = async () => {
   }
 }
 
-// 5. 添加防抖的数据监听：
-let searchTimer = null
-watch(
-  [searchKeyword, filters, sortBy, currentPage],
-  () => {
-    if (searchTimer) clearTimeout(searchTimer)
-    searchTimer = setTimeout(() => {
-      fetchActivities()
-    }, 300)
-  },
-  { deep: true }
-)
-
+// 批量检查所有活动的报名状态
+const checkJoinStatusForAllActivities = async () => {
+  try {
+    // 获取用户已报名的活动列表
+    const result = await activityAPI.getJoinedActivities(1, 1000)
+    if (result.success) {
+      const joinedList = Array.isArray(result.data?.items) ? result.data.items : (Array.isArray(result.data) ? result.data : [])
+      const joinedIds = new Set(joinedList.map(r => String(r.activity_id ?? r.activity?.id)))
+      
+      // 更新每个活动的报名状态
+      activities.value.forEach(activity => {
+        activity.joined = joinedIds.has(String(activity.id))
+      })
+      
+      console.log('[checkJoinStatusForAllActivities] 已报名活动 IDs:', Array.from(joinedIds))
+    }
+  } catch (error) {
+    console.error('[checkJoinStatusForAllActivities] 检查报名状态失败:', error)
+  }
+}
 
 
 // 方法
@@ -444,6 +460,7 @@ const formatDate = (dateString) => {
   })
 }
 
+//排序（最新发布、热门点击、参与人数）
 const sortByMap = {
   latest: '-created_at',
   hot: '-views_count',
@@ -465,21 +482,83 @@ const applySorting = () => {
   fetchActivities()
 }
 
-// 在 activitylist.vue 中添加计算属性或方法
+// 翻页处理函数
+const goToPrevPage = () => {
+  if (currentPage.value > 1) {
+    currentPage.value--
+    fetchActivities()
+  }
+}
+
+const goToNextPage = () => {
+  if (currentPage.value < totalPages.value) {
+    currentPage.value++
+    fetchActivities()
+  }
+}
+
+//获取面向人群
 const getAudience = (activity) => {
   return activity.target_audience?.Targeted_people || []
 }
 
+//获取活动分类
 const getCategory = (activity) => {
   return activity.target_audience?.Activity_class || []
 }
 const viewActivityDetail = (activityId) => {
-  // 使用命名路由并传递 params，路由名为 'ActivityDetails'（router/index.js）
   router.push({ name: 'ActivityDetails', params: { id: activityId } })
+}
+
+// 检查活动是否可以报名（已报名或已结束则禁用按钮）
+const isActivityJoinDisabled = (activity) => {
+  if (!activity) return true
+  
+  // 如果已报名，则禁用
+  if (activity.joined) return true
+  
+  // 如果活动已结束，则禁用
+  const now = Date.now()
+  const startTs = activity.activity_time ? new Date(activity.activity_time).getTime() : null
+  if (startTs !== null && !isNaN(startTs) && now > startTs) {
+    return true
+  }
+  
+  return false
 }
 
 const joinActivity = async (activityId) => {
   try {
+    console.log('[joinActivity] 开始报名，activityId:', activityId)
+    
+    // 获取当前活动对象
+    const activity = activities.value.find(a => a.id === activityId)
+    if (!activity) {
+      alert('无法找到活动信息')
+      return
+    }
+
+    // 检查活动是否已结束
+    const now = Date.now()
+    const startTs = activity.activity_time ? new Date(activity.activity_time).getTime() : null
+    if (startTs !== null && !isNaN(startTs) && now > startTs) {
+      alert('活动已结束，不能报名')
+      return
+    }
+
+    // 检查用户是否已报名
+    if (activity.joined) {
+      alert('你已经报名了该活动')
+      return
+    }
+    
+    // 检查是否登录
+    if (!isLoggedIn.value) {
+      alert('请先登录')
+      router.push('/auth')
+      return
+    }
+    
     const result = await activityAPI.joinActivity(activityId, {
       comment: '',
       additional_info: {}
@@ -487,11 +566,8 @@ const joinActivity = async (activityId) => {
     if (result.success) {
       alert('报名成功！')
       // 更新活动状态
-      const activity = activities.value.find(a => a.id === activityId)
-      if (activity) {
-        activity.joined = true
-        activity.current_participants = (activity.current_participants || 0) + 1
-      }
+      activity.joined = true
+      activity.current_participants = (activity.current_participants || 0) + 1
     } else {
       alert(result.message || '报名失败')
     }
@@ -510,7 +586,7 @@ const staticCandidatesFor = (item) => {
 
   // 按 activityId 构造常见命名候选（后端以 activityId 命名封面）
   if (id !== undefined && id !== null) {
-    // 仅使用你后端的静态路径 TopActivities，尝试多种扩展名
+    // 使用后端的静态路径 TopActivities，尝试多种扩展名
     imageExtensions.forEach(ext => {
       candidates.push(`${API_BASE_URL_IMPORT}/static/img/TopActivities/${id}.${ext}`)
     })
@@ -519,14 +595,13 @@ const staticCandidatesFor = (item) => {
   return candidates
 }
 
+//检查图片是否可以正常加载
 const checkImage = (url) => {
   return new Promise(resolve => {
     const img = new Image()
     img.onload = () => resolve(true)
     img.onerror = () => resolve(false)
-    // add a small cache-busting param to avoid stale 404 cached responses
     img.src = url + (url.includes('?') ? '&' : '?') + 'v=1'
-    // safety timeout
     setTimeout(() => resolve(false), 3000)
   })
 }
@@ -539,20 +614,16 @@ const resolveCoverImageIfNeeded = async (item) => {
 
   const candidates = staticCandidatesFor(item)
   for (const c of candidates) {
-    // skip duplicates and empty
     if (!c) continue
     try {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await checkImage(c)
       if (ok) {
         item.cover_image = c
         return
       }
     } catch (e) {
-      // ignore and try next
     }
   }
-  // 如果都不行，维持占位图（模板会显示 placeholder）
 }
 
 
@@ -561,14 +632,6 @@ const initData = () => {
   currentPage.value = 1
   fetchActivities()
 }
-
-// 监听路由变化，用于从详情页返回时刷新数据
-const route = useRoute()
-onMounted(() => {
-  initData()
-})
-
-
 
 // 监听筛选条件变化
 watch([searchKeyword, filters, sortBy], () => {
@@ -698,6 +761,45 @@ watch([searchKeyword, filters, sortBy], () => {
 
 .nav-link:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+/* 搜索栏样式 */
+.nav-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.search-input {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 14px;
+  outline: none;
+  min-width: 150px;
+  padding: 4px 8px;
+}
+
+.search-input::placeholder {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.search-btn {
+  background: transparent;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  transition: all 0.2s;
+}
+
+.search-btn:hover {
+  transform: scale(1.1);
 }
 
 /* 筛选区域样式 */

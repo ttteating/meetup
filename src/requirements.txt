@@ -1,0 +1,73 @@
+# 前端项目依赖包清单
+
+## 核心框架
+vue@^3.2.0
+vue-router@^4.0.0
+
+## 开发工具
+@vitejs/plugin-vue@^4.0.0
+vite@^4.0.0
+eslint@^8.0.0
+@babel/core@^7.0.0
+@babel/preset-env@^7.0.0
+
+## 构建工具
+@vitejs/plugin-vue-jsx@^3.0.0
+terser@^5.0.0
+
+## 代码质量
+prettier@^2.0.0
+eslint-plugin-vue@^9.0.0
+
+## HTTP客户端 (如果需要额外的HTTP库)
+axios@^1.0.0
+
+## 状态管理 (如果使用Pinia以外的其他状态管理)
+pinia@^2.0.0
+
+## 样式处理
+sass@^1.50.0
+less@^4.0.0
+
+## 测试工具 (如果需要单元测试)
+@vue/test-utils@^2.0.0
+vitest@^0.28.0
+jsdom@^21.0.0
+
+## 类型检查 (如果使用TypeScript)
+typescript@^4.0.0
+@types/node@^18.0.0
+
+## 其他工具库
+core-js@^3.0.0
+regenerator-runtime@^0.13.0
+
+## 浏览器兼容性
+@vitejs/plugin-legacy@^4.0.0
+
+## 静态资源处理
+vite-plugin-static-copy@^0.13.0
+
+## 开发服务器
+vite-plugin-html@^3.0.0
+
+## 环境变量处理
+dotenv@^16.0.0
+
+## 代码分割
+@rollup/plugin-dynamic-import-vars@^2.0.0
+
+## 性能优化
+vite-plugin-compression@^0.5.0
+
+## PWA支持 (如果需要)
+vite-plugin-pwa@^0.14.0
+
+## 分析工具
+rollup-plugin-visualizer@^5.0.0
+
+## Node.js版本要求
+node>=16.0.0
+
+## 包管理器
+npm>=8.0.0 或 yarn>=1.22.0 或 pnpm>=7.0.0

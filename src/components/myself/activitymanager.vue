@@ -111,7 +111,7 @@
                   <span class="tab-count">{{ participants.length }}</span>
                 </button>
                 <button 
-                  v-for="status in ['pending', 'approved', 'rejected', 'cancelled', 'checked_in', 'no_show']"
+                  v-for="status in ['pending', 'approved', 'rejected', 'cancelled']"
                   :key="status"
                   class="status-tab"
                   :class="{ active: selectedStatusFilter === status, [getStatusClass(status)]: true }"
@@ -126,18 +126,14 @@
               <div class="participants-by-status">
                 <!-- 显示全部或筛选后的参与者 -->
                 <div v-if="!selectedStatusFilter" class="status-group">
-                  <div v-for="status in ['pending', 'approved', 'rejected', 'cancelled', 'checked_in', 'no_show']" :key="status">
+                  <div v-for="status in ['pending', 'approved', 'rejected', 'cancelled']" :key="status">
                     <div v-if="registrationStatuses[status].length > 0" class="status-section">
                       <div class="status-section-header">
                         <h3>{{ getStatusLabel(status) }} ({{ registrationStatuses[status].length }})</h3>
                       </div>
                       <div class="participants-table">
                         <div class="table-header">
-                          <div class="table-cell">姓名</div>
-                          <div class="table-cell">电话</div>
-                          <div class="table-cell">邮箱</div>
-                          <div class="table-cell">学院</div>
-                          <div class="table-cell">年级</div>
+                          <div class="table-cell">用户名</div>
                           <div class="table-cell">报名时间</div>
                           <div v-if="status === 'pending'" class="table-cell">操作</div>
                         </div>
@@ -146,23 +142,11 @@
                           :key="participant.id"
                           class="table-row"
                         >
-                          <div class="table-cell" data-label="姓名">
-                            {{ participant.user?.username || participant.username || '匿名用户' }}
-                          </div>
-                          <div class="table-cell" data-label="电话">
-                            {{ participant.user?.phone || participant.phone || '未填写' }}
-                          </div>
-                          <div class="table-cell" data-label="邮箱">
-                            {{ participant.user?.email || participant.email || '未填写' }}
-                          </div>
-                          <div class="table-cell" data-label="学院">
-                            {{ participant.user?.college || participant.college || '未填写' }}
-                          </div>
-                          <div class="table-cell" data-label="年级">
-                            {{ getGradeText(participant.user?.grade || participant.grade) }}
+                          <div class="table-cell" data-label="用户名">
+                            {{ participant.participant?.username || '未知用户' }}
                           </div>
                           <div class="table-cell" data-label="报名时间">
-                            {{ formatDateTime(participant.created_at || participant.joined_at) }}
+                            {{ formatDateTime(participant.registration_time || participant.created_at) }}
                           </div>
                           <div v-if="status === 'pending'" class="table-cell" data-label="操作">
                             <div class="action-buttons">
@@ -196,11 +180,7 @@
                     </div>
                     <div class="participants-table">
                       <div class="table-header">
-                        <div class="table-cell">姓名</div>
-                        <div class="table-cell">电话</div>
-                        <div class="table-cell">邮箱</div>
-                        <div class="table-cell">学院</div>
-                        <div class="table-cell">年级</div>
+                        <div class="table-cell">用户名</div>
                         <div class="table-cell">报名时间</div>
                         <div v-if="selectedStatusFilter === 'pending'" class="table-cell">操作</div>
                       </div>
@@ -209,23 +189,11 @@
                         :key="participant.id"
                         class="table-row"
                       >
-                        <div class="table-cell" data-label="姓名">
-                          {{ participant.user?.username || participant.username || '匿名用户' }}
-                        </div>
-                        <div class="table-cell" data-label="电话">
-                          {{ participant.user?.phone || participant.phone || '未填写' }}
-                        </div>
-                        <div class="table-cell" data-label="邮箱">
-                          {{ participant.user?.email || participant.email || '未填写' }}
-                        </div>
-                        <div class="table-cell" data-label="学院">
-                          {{ participant.user?.college || participant.college || '未填写' }}
-                        </div>
-                        <div class="table-cell" data-label="年级">
-                          {{ getGradeText(participant.user?.grade || participant.grade) }}
+                        <div class="table-cell" data-label="用户名">
+                          {{ participant.participant?.username || '未知用户' }}
                         </div>
                         <div class="table-cell" data-label="报名时间">
-                          {{ formatDateTime(participant.created_at || participant.joined_at) }}
+                          {{ formatDateTime(participant.registration_time || participant.created_at) }}
                         </div>
                         <div v-if="selectedStatusFilter === 'pending'" class="table-cell" data-label="操作">
                           <div class="action-buttons">
@@ -516,7 +484,7 @@ import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { activityAPI, API_BASE_URL } from '@/services/api'
 
-// 简单的消息提示函数（不依赖 element-plus）
+// 简单的消息提示函数，使用弹窗弹出并显示信息
 const showMessage = (message, type = 'info') => {
   console.log(`[${type.toUpperCase()}] ${message}`)
   alert(message)
@@ -554,15 +522,13 @@ const registrationStatuses = reactive({
   pending: [],      // 待审核
   approved: [],     // 已确认
   rejected: [],     // 已拒绝
-  cancelled: [],    // 已取消
-  checked_in: [],   // 已签到
-  no_show: []       // 未出席
+  cancelled: []     // 已取消
 })
 
 const selectedStatusFilter = ref('')  // 用于筛选显示哪个状态的参与者
 const isReviewingRegistration = ref(false)  // 审核中状态标识
 
-// 编辑表单 - 按后端请求体规范
+// 编辑表单
 const editForm = reactive({
   title: '',
   description: '',
@@ -581,7 +547,7 @@ const editForm = reactive({
   }
 })
 
-// 原始表单数据 - 用于追踪哪些字段被修改
+// 原始表单数据，用于追踪哪些字段被修改
 const originalForm = reactive({
   title: '',
   description: '',
@@ -600,7 +566,7 @@ const originalForm = reactive({
   }
 })
 
-// 选项数据（从 activityout.vue 参考）
+// 选项数据
 const benefitsOptions = [
   { value: '综测加分', label: '综测加分' },
   { value: '志愿时', label: '志愿时' },
@@ -624,7 +590,7 @@ const activityClassOptions = [
   { value: '校园生活', label: '校园生活' }
 ]
 
-// 字段错误信息
+// 字段错误信息，当表单验证失败时，可以将对应的错误信息赋值给相应的字段
 const fieldErrors = reactive({
   title: '',
   description: '',
@@ -670,12 +636,13 @@ const validationRules = {
 const validateField = (fieldName) => {
   const value = editForm[fieldName]
   const validator = validationRules[fieldName]
-  
+  //如果该字段存在验证规则，则执行验证并将结果存储到错误信息对象中
   if (validator) {
     fieldErrors[fieldName] = validator(value)
   }
 }
 
+//查看是否有非空信息
 const isFormValid = computed(() => {
   return !Object.values(fieldErrors).some(error => error !== '')
 })
@@ -703,7 +670,6 @@ const loadActivityDetails = async () => {
     
     console.log('活动详情原始响应:', data)
     
-    // 后端返回的结构是 { activity: {...}, stats: {...} }，需要解包
     const activityData = data.activity || data
     
     if (!activityData) {
@@ -714,7 +680,6 @@ const loadActivityDetails = async () => {
     
     console.log('活动详情数据:', activityData)
     
-    // 填充 activityDetails 供显示原始数据使用
     activityDetails.value = activityData
     
     // 异步加载活动封面（从静态资源库中探测）
@@ -858,7 +823,6 @@ const loadParticipants = async () => {
   try {
     const result = await activityAPI.getActivityRegistrations(activityId, 1, 100)
     if (result.success) {
-      // 后端返回的数据结构为 { items: [...], total: count, page: 1, page_size: 100 }
       const registrations = result.data?.items || result.data || []
       participants.value = registrations
       // 分类处理参与者
@@ -903,9 +867,7 @@ const getStatusLabel = (status) => {
     'pending': '待审核',
     'approved': '已确认',
     'rejected': '已拒绝',
-    'cancelled': '已取消',
-    'checked_in': '已签到',
-    'no_show': '未出席'
+    'cancelled': '已取消'
   }
   return statusLabels[status] || status
 }
@@ -916,9 +878,7 @@ const getStatusClass = (status) => {
     'pending': 'status-pending',
     'approved': 'status-approved',
     'rejected': 'status-rejected',
-    'cancelled': 'status-cancelled',
-    'checked_in': 'status-checked-in',
-    'no_show': 'status-no-show'
+    'cancelled': 'status-cancelled'
   }
   return statusClasses[status] || ''
 }
@@ -972,12 +932,11 @@ const approveAllPending = async () => {
 const loadActivityStats = async () => {
   loading.stats = true
   try {
-    // 使用 getActivityDetails 调用 /activities/{id}/ 端点
+    // 使用 getActivityDetails
     const result = await activityAPI.getActivityDetails(activityId)
     if (result.success && result.data) {
       const data = result.data
       
-      // 后端返回的结构是 { activity: {...}, stats: {...} }，需要解包
       const statsData = data.stats || {}
       const activityData = data.activity || data
       
@@ -1030,7 +989,6 @@ const checkEditable = async () => {
       }
     }
   } catch (error) {
-    // 某些后端在缺少参数时会返回 Field required，属于可忽略的校验错误
     const msg = error && (error.message || error.toString())
     if (msg && msg.includes('Field required')) {
       console.warn('检查编辑权限接口返回 Field required，已忽略（允许编辑）')
@@ -1172,7 +1130,7 @@ const getActivityStatus = () => {
   return '已结束'
 }
 
-// --- 图片加载逻辑（从 mycenter.vue 复用）---
+//图片加载逻辑（与其他界面相似）
 const imageExtensions = ['jpg', 'jpeg', 'png', 'webp', 'JPG', 'JPEG', 'PNG', 'WEBP']
 
 // 根据活动ID生成候选图片URL列表
@@ -1230,7 +1188,6 @@ const resolveCoverImageIfNeeded = async (item) => {
   for (const c of candidates) {
     if (!c) continue
     try {
-      // eslint-disable-next-line no-await-in-loop
       const ok = await checkImage(c)
       if (ok) {
         item.cover_image = c
@@ -1267,7 +1224,7 @@ onMounted(() => {
   loadParticipants()
   loadActivityStats()
   loadActivityData()
-  // 已移除对后端可编辑性检查，默认允许编辑（发布者进入该页面）
+  // 已移除对后端可编辑身份检查，默认允许编辑（发布者进入该页面）
 })
 </script>
 
@@ -1555,6 +1512,10 @@ onMounted(() => {
   padding: 2rem;
 }
 
+.participants-list {
+  animation: fadeIn 0.3s ease-in-out;
+}
+
 .participants-table {
   border-radius: 8px;
   overflow: hidden;
@@ -1563,30 +1524,43 @@ onMounted(() => {
 
 .table-header {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr 1.5fr;
-  background: #ff6b00;
+  grid-template-columns: 2.5fr 2.5fr 1.5fr;
+  background: linear-gradient(135deg, #ff6b00 0%, #ff7e5f 100%);
   color: white;
   font-weight: 600;
+  padding: 0;
+  align-items: center;
 }
 
 .table-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr 1.5fr;
-  border-bottom: 1px solid #eee;
-  transition: background 0.3s;
+  grid-template-columns: 2.5fr 2.5fr 1.5fr;
+  border-bottom: 1px solid #f0f0f0;
+  transition: all 0.3s;
+  align-items: center;
 }
 
 .table-cell {
-  padding: 1rem;
+  padding: 1.2rem 1.5rem;
   text-align: left;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.table-header .table-cell {
+  padding: 1.2rem 1.5rem;
+  color: white;
+  font-weight: 600;
+  font-size: 0.95rem;
 }
 
 .table-row:hover {
-  background: #f8f9fa;
+  background: #fafbfc;
+  box-shadow: inset 0 0 8px rgba(255, 107, 0, 0.05);
 }
 
 .table-row:last-child {
-  border-bottom: none;
+  border-bottom: 1px solid #f0f0f0;
 }
 
 /* 编辑表单 */
@@ -2004,10 +1978,11 @@ onMounted(() => {
 }
 
 .status-section {
-  background: #fafafa;
+  background: #fafbfc;
   border-radius: 12px;
   padding: 1.5rem;
-  border: 1px solid #eee;
+  border: 1px solid #e8e8e8;
+  transition: all 0.3s;
 }
 
 .status-section-header {
@@ -2027,11 +2002,18 @@ onMounted(() => {
 
 /* 调整表格布局 */
 .status-section .table-header {
-  grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr 1.5fr auto;
+  grid-template-columns: 2.5fr 2.5fr 1.5fr;
 }
 
 .status-section .table-row {
-  grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr 1.5fr auto;
+  grid-template-columns: 2.5fr 2.5fr 1.5fr;
+}
+
+.participants-table {
+  background: white;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e8e8e8;
 }
 
 /* 操作按钮 */
@@ -2039,10 +2021,12 @@ onMounted(() => {
   display: flex;
   gap: 0.5rem;
   flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
 }
 
 .btn-action {
-  padding: 0.4rem 0.8rem;
+  padding: 0.5rem 1rem;
   border: none;
   border-radius: 6px;
   cursor: pointer;
@@ -2050,6 +2034,8 @@ onMounted(() => {
   font-weight: 500;
   transition: all 0.3s;
   white-space: nowrap;
+  min-width: 60px;
+  text-align: center;
 }
 
 .btn-action.approve {
@@ -2118,16 +2104,6 @@ onMounted(() => {
 .status-cancelled {
   background: #e2e3e5;
   border-color: #d3d6d8;
-}
-
-.status-checked-in {
-  background: #d1ecf1;
-  border-color: #bee5eb;
-}
-
-.status-no-show {
-  background: #fff5e6;
-  border-color: #ffce9a;
 }
 
 /* 响应式调整 */

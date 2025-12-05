@@ -49,10 +49,12 @@ const messages = ref([])
 const sending = ref(false)
 const loading = ref(false)
 
+//将布尔值取反（用于组件的展开与收起）
 function toggleOpen() {
   open.value = !open.value
 }
 
+//发送信息
 async function onSend() {
   const text = input.value && input.value.trim()
   if (!text) return
